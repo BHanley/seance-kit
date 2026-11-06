@@ -16,7 +16,7 @@ Without `seance` on PATH, Invoke still starts. It shows no circles and prints on
 ## Install from nothing
 
 ```
-git clone <this repo> seance-kit && cd seance-kit
+gh repo clone BHanley/seance-kit && cd seance-kit   # the repo is private for now: you need access
 ./install.sh invoke            # venv, requirements, config file, service files
 $EDITOR ~/.config/seance-kit/config.env     # set OWNER and ORIGIN (see below)
 invoke/seance-chat check       # says what is still missing
@@ -26,7 +26,7 @@ Start it:
 
 - Linux: `systemctl --user enable --now seance-chat seance-digest.timer`
 - macOS: `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.seance-kit.invoke.plist`
-- Anywhere, by hand: `~/.local/share/seance-kit/venv/bin/python invoke/seance-chat run`
+- Anywhere, by hand: `~/.local/share/seance-kit/venv/bin/python invoke/seance-chat run` (from the repo folder)
 
 Then give it https, for example `tailscale serve --bg --https=8443 http://127.0.0.1:9667`. Open the `ORIGIN` address on your phone, install it to the home screen, and turn on notifications; a test notification is sent when you allow them. If you never get it, check that `ORIGIN` is the exact https address you opened.
 
@@ -63,7 +63,21 @@ A lead replies with `seance ctl finish` (or a pad note whose first line is only 
 
 The instructions that tell the lead about these lines are in the `TASK` and `NOTE` texts at the top of `seance-chat`. Edit them to taste.
 
+## Try it with curl
+
+Replace OWNER with your config value. In `LOCAL_MODE` the port is the one in your config.
+
+```
+curl -H 'Tailscale-User-Login: OWNER' http://127.0.0.1:PORT/api/circles
+curl -H 'Tailscale-User-Login: OWNER' 'http://127.0.0.1:PORT/api/thread?ws=alerts'
+```
+
+Every POST must also send an `Origin` header equal to your `ORIGIN` setting (in `LOCAL_MODE`, `http://127.0.0.1:PORT`). Browsers do this by themselves.
+
 ## Spec cards
+
+Quick way to see a card without a lead: run `seance-chat alert $'spec: Rename the widget\nchanges: label\nstays: layout'` and open the Alerts thread. The command can print that no phone took the notification; the card was still posted.
+
 
 Before a lead hands work to another pane, or does something wider than you literally asked, it can send a message with a line `spec: <title>` and 3 to 5 short lines under it (what changes, where, what stays, how you will see it). Invoke draws it as a card with the title on top and two buttons, **Go** and **Change**.
 

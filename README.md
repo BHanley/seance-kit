@@ -36,8 +36,8 @@ Read from the code, not tried on every combination:
 ## Install
 
 ```
-git clone <this repo> seance-kit && cd seance-kit
-./install.sh all          # or: invoke, afk, theme
+gh repo clone BHanley/seance-kit && cd seance-kit   # the repo is private for now: you need access
+./install.sh all          # installs all three: invoke, afk and theme-sync (or name one: invoke, afk, theme)
 $EDITOR ~/.config/seance-kit/config.env
 invoke/seance-chat check
 ```
