@@ -76,7 +76,7 @@ Every POST must also send an `Origin` header equal to your `ORIGIN` setting (in 
 
 ## Spec cards
 
-Quick way to see a card without a lead: run `seance-chat alert $'spec: Rename the widget\nchanges: label\nstays: layout'` and open the Alerts thread. The command can print that no phone took the notification; the card was still posted.
+Quick way to see a card without a lead: run `seance-chat alert $'spec: Rename the widget\nchanges: label\nstays: layout'` and open the Alerts thread. With no phone subscribed the command says the card was posted and no phone has notifications on, and exits 0.
 
 
 Before a lead hands work to another pane, or does something wider than you literally asked, it can send a message with a line `spec: <title>` and 3 to 5 short lines under it (what changes, where, what stays, how you will see it). Invoke draws it as a card with the title on top and two buttons, **Go** and **Change**.
@@ -123,6 +123,26 @@ It reads `ORIGIN` from the same config file and does nothing outside a Seance pa
 ## Tune sliders on the client
 
 `web/tune.js` adds a slider panel when the page URL has `?tune`. See `../docs/tune-panel.md`.
+
+## What Invoke reads from `seance ctl`
+
+Invoke talks to Seance only by running `seance ctl ...` (the binary is `SEANCE_BIN`, else `seance` on PATH). With no binary there are no circles and nothing breaks. This list is read from the calls in `seance-chat`. It is written against a Seance fork (https://github.com/BHanley/seance, branch `brian`) and is unverified against stock Seance (https://github.com/zackham/seance); check each flag and field there.
+
+Reads:
+- `ctl list --all --json`: `data.panes[]`. Per pane it reads `slug`, `workspace`, `workspace_name`, `name`, `kind` (`terminal` for panes that take messages), `exited`, `asleep`, `activity` (`idle`, `busy`, `awaiting-input`, `unknown`), `activity_evidence`, `task_id`, `task_status` (`open` means working), `queued_tasks[]` and `parked_tasks[]` (task ids).
+- `ctl space list --json`: `data.spaces[]` with `id`, `name` and `circles[].workspace`, for the rail order. Optional; without it every circle lands in Other.
+- `ctl lead WS --json`: `data.lead`, the slug of the circle's lead pane. Invoke never starts a lead.
+- `ctl task --id TID --json PANE`: `data` with `status`, `body`, `created_ms`, `finished_ms`. Unknown ids are treated as pruned.
+- `ctl pad PANE --cat`: the pane's pad as text, where answers are read back.
+- `ctl read PANE --lines N` (and `--all --lines N`): the screen text, for login-expired lines, prompts, spinners, the `ctx:NN%` status line and the peek view.
+
+Writes:
+- `ctl send PANE --queue --file PATH`: hands a phone message to a lead as a task. Output must contain `task=ID`.
+- `ctl note-agent PANE --file PATH` or `ctl note-agent PANE TEXT`: a note to a busy pane. `--interrupt TEXT` is used for Send now. Exit 0 is sent, 3 is not delivered right now; other codes are failures.
+- `ctl wait PANE --task TID --status done --timeout SECS`: blocks until the task is done. Exit 0 is done, 2 is a timeout; other codes are retried only if the error text looks transient.
+- `ctl finish --pane PANE --task TID --status done --empty-ok --note TEXT`: closes a parked task when it is swiped away.
+- `ctl send-raw PANE KEYS`: raw keys for answer buttons, Esc to stop a turn, and typing a `/command` or `!command`.
+- `ctl wake WS`: wakes a sleeping circle before a command is typed.
 
 ## Commands
 

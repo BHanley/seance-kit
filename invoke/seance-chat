@@ -180,6 +180,30 @@ def check_config():
     return bad
 
 
+def _found(cmd):
+    """Same lookup the server uses: SEANCE and GH are an absolute path or a name on PATH."""
+    return os.access(cmd, os.X_OK) if os.sep in cmd else bool(shutil.which(cmd))
+
+
+def check_tools():
+    """Warnings, not errors: Invoke starts without these but loses features."""
+    warn = []
+    if not _found(SEANCE):
+        warn.append(f"`seance` not found ({SEANCE}): circles will be empty; Invoke needs a working "
+                    "`seance ctl` where it runs. Install Seance or set SEANCE_BIN in config.env.")
+    if not _found(GH):
+        warn.append(f"`gh` not found ({GH}): PR chip is off until `gh auth login`.")
+    else:
+        env = {k: v for k, v in os.environ.items() if k != "GITHUB_TOKEN"}
+        try:
+            ok = subprocess.run([GH, "auth", "status"], capture_output=True, env=env, timeout=15).returncode == 0
+        except (OSError, subprocess.TimeoutExpired):
+            ok = False
+        if not ok:
+            warn.append("`gh` is not logged in: PR chip is off until `gh auth login`.")
+    return warn
+
+
 IMAGE_TYPES = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif"}
 # Videos from the phone (camera, share sheet) are kept as sent: no shrinking.
 VIDEO_TYPES = {"video/mp4": ".mp4", "video/webm": ".webm", "video/quicktime": ".mov"}
@@ -2703,9 +2727,10 @@ def alert(text, path="/api/alert"):
         with urllib.request.urlopen(req, timeout=90) as r:
             r.read()
     except urllib.error.HTTPError as e:
-        if e.code == 502:
-            sys.exit("seance-chat alert: posted to the Alerts thread, but no phone took the notification "
-                     "(open Invoke on a phone and turn on notifications first).")
+        if e.code == 502:  # the post worked; only the push had nowhere to go
+            print("seance-chat alert: posted to the Alerts thread; no phone has notifications on "
+                  "(open Invoke on a phone and turn on notifications to get the push).")
+            return
         sys.exit(f"seance-chat alert: {e}")
     except (urllib.error.URLError, OSError) as e:
         sys.exit(f"seance-chat alert: {e}")
@@ -2721,6 +2746,8 @@ if __name__ == "__main__":
     elif sys.argv[1:2] == ["check"]:
         problems = check_config()
         print("\n".join(problems) if problems else f"Config ok ({CONFIG_FILE}).")
+        for w in check_tools():
+            print(f"warning: {w}")
         sys.exit(1 if problems else 0)
     else:
         print(__doc__)

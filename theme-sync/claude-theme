@@ -172,7 +172,7 @@ def sync(sid):
                  '"theme": "dark", then run this again.')
     if new != text:
         SETTINGS.write_text(new)
-    print(f"{os.uname().nodename}: custom:seance-{sid}")
+    print(f"Claude theme: custom:seance-{sid}")
     if MAC_SSH and sys.platform != "darwin":
         remote = cfg("MAC_CLAUDE_THEME")
         if not remote:
