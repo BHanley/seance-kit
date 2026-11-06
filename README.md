@@ -11,7 +11,7 @@ Three add-ons for [Seance](https://github.com/zackham/seance) (a multi-pane term
 
 Each folder has its own README. Start with `invoke/README.md`.
 
-This repo is a private, one-way export of a working setup. It has no keys, no message history and no personal notes. Seance itself is not included.
+This repo is a one-way export of a working setup. It has no keys, no message history and no personal notes. Seance itself is not included. The Seance app these add-ons were built against is in the seance-build repository; upstream Seance is https://github.com/zackham/seance.
 
 ## Requirements
 
@@ -36,11 +36,14 @@ Read from the code, not tried on every combination:
 ## Install
 
 ```
-gh repo clone BHanley/seance-kit && cd seance-kit   # the repo is private for now: you need access
+# clone this repository, then:
+cd seance-kit
 ./install.sh all          # installs all three: invoke, afk and theme-sync (or name one: invoke, afk, theme)
 $EDITOR ~/.config/seance-kit/config.env
 invoke/seance-chat check
 ```
+
+If you use the Chat view in the Seance app, it needs the Invoke URL: set `SEANCE_INVOKE_URL`, or write the server URL (your `ORIGIN`) into `~/.config/seance/invoke-url`.
 
 The installer writes files and prints the start commands; it only starts things with `--enable`. It never overwrites your config.
 
@@ -53,7 +56,6 @@ Locations: config and generated keys in `~/.config/seance-kit/`; state in `~/.lo
 ## More
 
 - `docs/tune-panel.md`: the tune panel.
-- `docs/left-out.md`: what the original setup had that is not in this kit, and why.
 - `docs/testing.md`: what was tested and how.
 
 ## License

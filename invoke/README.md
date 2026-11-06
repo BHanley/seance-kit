@@ -16,7 +16,8 @@ Without `seance` on PATH, Invoke still starts. It shows no circles and prints on
 ## Install from nothing
 
 ```
-gh repo clone BHanley/seance-kit && cd seance-kit   # the repo is private for now: you need access
+# clone this repository, then:
+cd seance-kit
 ./install.sh invoke            # venv, requirements, config file, service files
 $EDITOR ~/.config/seance-kit/config.env     # set OWNER and ORIGIN (see below)
 invoke/seance-chat check       # says what is still missing
@@ -126,7 +127,7 @@ It reads `ORIGIN` from the same config file and does nothing outside a Seance pa
 
 ## What Invoke reads from `seance ctl`
 
-Invoke talks to Seance only by running `seance ctl ...` (the binary is `SEANCE_BIN`, else `seance` on PATH). With no binary there are no circles and nothing breaks. This list is read from the calls in `seance-chat`. It is written against a Seance fork (https://github.com/BHanley/seance, branch `brian`) and is unverified against stock Seance (https://github.com/zackham/seance); check each flag and field there.
+Invoke talks to Seance only by running `seance ctl ...` (the binary is `SEANCE_BIN`, else `seance` on PATH). With no binary there are no circles and nothing breaks. This list is read from the calls in `seance-chat`. It is written against the Seance app in the seance-build repository and is unverified against stock Seance (https://github.com/zackham/seance); check each flag and field there.
 
 Reads:
 - `ctl list --all --json`: `data.panes[]`. Per pane it reads `slug`, `workspace`, `workspace_name`, `name`, `kind` (`terminal` for panes that take messages), `exited`, `asleep`, `activity` (`idle`, `busy`, `awaiting-input`, `unknown`), `activity_evidence`, `task_id`, `task_status` (`open` means working), `queued_tasks[]` and `parked_tasks[]` (task ids).

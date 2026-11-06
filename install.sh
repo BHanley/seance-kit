@@ -75,6 +75,7 @@ do_invoke() {
     say "Check the config:   $KIT/invoke/seance-chat check"
     say "Then start it:      $start"
   fi
+  say "Seance app Chat view: set SEANCE_INVOKE_URL, or write the server URL to ~/.config/seance/invoke-url"
   say "Then put https in front of it, for example: tailscale serve --bg --https=8443 http://127.0.0.1:9667"
 }
 
