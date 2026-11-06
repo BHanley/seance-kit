@@ -1,0 +1,14 @@
+{
+  "name": "Seance Riso",
+  "base": "light",
+  "overrides": {
+    "userMessageBackground": "rgb(138,196,196)",
+    "userMessageBackgroundHover": "rgb(115,185,186)",
+    "composerSidebarBackground": "rgb(138,196,196)",
+    "promptBorder": "rgb(0,131,138)",
+    "promptBorderShimmer": "rgb(0,85,90)",
+    "briefLabelYou": "rgb(0,131,138)",
+    "selectionBg": "rgb(115,185,186)",
+    "text": "rgb(26,26,26)"
+  }
+}

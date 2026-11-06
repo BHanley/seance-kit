@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Mac: runs the Invoke server at login and keeps it up. install.sh invoke fills in __KIT__ and __HOME__. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>dev.seance-kit.invoke</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__HOME__/.local/share/seance-kit/venv/bin/python</string>
+    <string>__KIT__/invoke/seance-chat</string>
+    <string>run</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>__HOME__/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/Library/Logs/seance-kit-invoke.log</string>
+  <key>StandardOutPath</key>
+  <string>__HOME__/Library/Logs/seance-kit-invoke.log</string>
+</dict>
+</plist>

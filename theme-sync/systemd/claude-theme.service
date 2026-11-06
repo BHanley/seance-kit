@@ -1,0 +1,9 @@
+[Unit]
+# Clicking through the theme menu fires many runs in a row; never stop for that.
+StartLimitIntervalSec=0
+Description=Point Claude Code at the Seance theme's colors (claude-theme sync)
+
+[Service]
+Type=oneshot
+# install.sh fills in __KIT__ (this repo's folder).
+ExecStart=/usr/bin/python3 __KIT__/theme-sync/claude-theme sync

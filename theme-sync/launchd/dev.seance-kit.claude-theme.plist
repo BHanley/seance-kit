@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Mac: runs `claude-theme sync` whenever Seance changes its theme file. install.sh theme fills in __KIT__ and __HOME__. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>dev.seance-kit.claude-theme</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/python3</string>
+    <string>__KIT__/theme-sync/claude-theme</string>
+    <string>sync</string>
+  </array>
+  <key>WatchPaths</key>
+  <array>
+    <string>__HOME__/.local/share/seance/theme.json</string>
+  </array>
+  <key>ThrottleInterval</key>
+  <integer>1</integer>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/Library/Logs/seance-kit-claude-theme.log</string>
+  <key>StandardOutPath</key>
+  <string>__HOME__/Library/Logs/seance-kit-claude-theme.log</string>
+</dict>
+</plist>

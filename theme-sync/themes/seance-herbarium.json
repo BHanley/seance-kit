@@ -1,0 +1,14 @@
+{
+  "name": "Seance Herbarium",
+  "base": "light",
+  "overrides": {
+    "userMessageBackground": "rgb(146,150,162)",
+    "userMessageBackgroundHover": "rgb(136,139,158)",
+    "composerSidebarBackground": "rgb(146,150,162)",
+    "promptBorder": "rgb(67,64,127)",
+    "promptBorderShimmer": "rgb(44,42,83)",
+    "briefLabelYou": "rgb(67,64,127)",
+    "selectionBg": "rgb(136,139,158)",
+    "text": "rgb(28,37,30)"
+  }
+}

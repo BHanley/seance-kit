@@ -1,0 +1,9 @@
+[Unit]
+Description=Invoke end-of-day summary at 18:00
+
+[Timer]
+OnCalendar=*-*-* 18:00
+Persistent=false
+
+[Install]
+WantedBy=timers.target

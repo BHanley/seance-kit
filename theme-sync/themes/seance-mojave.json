@@ -1,0 +1,14 @@
+{
+  "name": "Seance Mojave",
+  "base": "dark",
+  "overrides": {
+    "userMessageBackground": "rgb(46,96,90)",
+    "userMessageBackgroundHover": "rgb(49,111,103)",
+    "composerSidebarBackground": "rgb(46,96,90)",
+    "promptBorder": "rgb(63,193,176)",
+    "promptBorderShimmer": "rgb(140,218,208)",
+    "briefLabelYou": "rgb(63,193,176)",
+    "selectionBg": "rgb(49,111,103)",
+    "text": "rgb(242,223,211)"
+  }
+}

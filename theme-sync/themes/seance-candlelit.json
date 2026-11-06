@@ -1,0 +1,14 @@
+{
+  "name": "Seance Candlelit",
+  "base": "dark",
+  "overrides": {
+    "userMessageBackground": "rgb(86,74,105)",
+    "userMessageBackgroundHover": "rgb(99,86,123)",
+    "composerSidebarBackground": "rgb(86,74,105)",
+    "promptBorder": "rgb(167,144,213)",
+    "promptBorderShimmer": "rgb(202,188,230)",
+    "briefLabelYou": "rgb(167,144,213)",
+    "selectionBg": "rgb(99,86,123)",
+    "text": "rgb(252,252,250)"
+  }
+}

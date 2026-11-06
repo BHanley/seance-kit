@@ -1,0 +1,14 @@
+{
+  "name": "Seance Fog",
+  "base": "dark",
+  "overrides": {
+    "userMessageBackground": "rgb(87,86,114)",
+    "userMessageBackgroundHover": "rgb(95,93,125)",
+    "composerSidebarBackground": "rgb(87,86,114)",
+    "promptBorder": "rgb(183,168,240)",
+    "promptBorderShimmer": "rgb(212,203,246)",
+    "briefLabelYou": "rgb(183,168,240)",
+    "selectionBg": "rgb(95,93,125)",
+    "text": "rgb(227,231,238)"
+  }
+}

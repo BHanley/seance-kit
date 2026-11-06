@@ -1,0 +1,208 @@
+#!/usr/bin/env python3
+"""Claude Code colors that follow the Seance theme.
+
+  claude-theme gen          write seance-<id>.json (Claude Code custom themes), one per Seance theme
+  claude-theme install      copy the ready-made themes from this kit's themes/ folder to Claude's themes folder
+  claude-theme sync [ID]    point Claude's settings.json at that theme (default: the one Seance has on,
+                            read from SAVED_THEME below); if a Mac is configured it does the Mac too over ssh
+  claude-theme check        say what is missing, then exit
+
+Your messages and the prompt box take the theme's second accent (its "violet" slot), the
+color each theme pairs against its main accent, so they stand apart from Claude's orange
+and from the Seance chrome; light themes get Claude's light base.
+
+Config (~/.config/seance-kit/config.env, or SEANCE_KIT_<KEY> in the environment):
+  CLAUDE_DIR          Claude Code's folder (default ~/.claude): settings.json and themes/ live there
+  SAVED_THEME         the file Seance writes when the theme changes, {"scheme": "<id>"}
+                      (default ~/.local/share/seance/theme.json)
+  MAC_SSH             optional: also sync a Mac over ssh (user@host or an ssh alias)
+  MAC_SSH_KEY         optional: ssh key for it
+  MAC_CLAUDE_THEME    path of this script on the Mac, needed with MAC_SSH
+
+SCHEMES below are the Seance theme colors: (id, light, terminal background, terminal text,
+second accent). Add a row when your Seance gets a new theme. Claude's text colour is set to the
+terminal's own text colour: Seance spots Claude's replies by a `●` in that colour and paints
+them in the reply colour.
+"""
+import json
+import os
+import re
+import shlex
+import subprocess
+import sys
+from pathlib import Path
+
+SCHEMES = [
+    ("candlelit", False, 0x131111, 0xFCFCFA, 0xA790D5),
+    ("abyssal", False, 0x0C131D, 0xC9D7E3, 0xFF8A6B),
+    ("ectoplasm", False, 0x070A08, 0xB8F2C6, 0xD6B8FF),
+    ("ouija", True, 0xF8F2E7, 0x2A1E16, 0x2F3F7A),
+    ("monokai", False, 0x2D2A2E, 0xFCFCFA, 0xAB9DF2),
+    ("tarot", False, 0x150F21, 0xE3DAF2, 0xE0457B),
+    ("mojave", False, 0x22171A, 0xF2DFD3, 0x3FC1B0),
+    ("riso", True, 0xFBF9F3, 0x1A1A1A, 0x00838A),
+    ("synth", False, 0x0F0C26, 0xE6E0FF, 0x2DE2FF),
+    ("fog", False, 0x30353F, 0xE3E7EE, 0xB7A8F0),
+    ("parlor", True, 0xD2C9B9, 0x231C17, 0x24527A),
+    ("herbarium", True, 0xC2CAB8, 0x1C251E, 0x43407F),
+]
+HOME = Path.home()
+CONF = Path(os.environ.get("SEANCE_KIT_CONFIG_DIR")
+            or Path(os.environ.get("XDG_CONFIG_HOME") or HOME / ".config") / "seance-kit")
+
+
+def load_config():
+    """KEY=value lines, the same config.env the other kit scripts read."""
+    vals = {}
+    try:
+        lines = (CONF / "config.env").read_text().splitlines()
+    except OSError:
+        return vals
+    for line in lines:
+        key, eq, val = line.strip().partition("=")
+        if not eq or key.startswith("#"):
+            continue
+        val = val.strip()
+        if len(val) > 1 and val[0] == val[-1] and val[0] in "\"'":
+            val = val[1:-1]
+        vals[key.strip()] = os.path.expandvars(os.path.expanduser(val))
+    return vals
+
+
+_CFG = load_config()
+
+
+def cfg(key, default=""):
+    return os.environ.get("SEANCE_KIT_" + key) or _CFG.get(key) or default
+
+
+CLAUDE_DIR = Path(cfg("CLAUDE_DIR", str(HOME / ".claude")))
+THEMES = CLAUDE_DIR / "themes"
+SETTINGS = CLAUDE_DIR / "settings.json"
+SAVED = Path(cfg("SAVED_THEME", str(HOME / ".local/share/seance/theme.json")))
+KIT_THEMES = Path(__file__).resolve().parent / "themes"
+MAC_SSH = cfg("MAC_SSH")
+MAC_SSH_CMD = (["ssh"] + (["-i", cfg("MAC_SSH_KEY"), "-o", "IdentitiesOnly=yes"] if cfg("MAC_SSH_KEY") else []) +
+               ["-o", "BatchMode=yes", "-o", "ConnectTimeout=5", MAC_SSH]) if MAC_SSH else []
+
+
+def rgb(c):
+    return ((c >> 16) & 255, (c >> 8) & 255, c & 255)
+
+
+def mix(a, b, t):
+    return tuple(round(x + (y - x) * t) for x, y in zip(a, b))
+
+
+def lum(c):
+    def ch(v):
+        v /= 255
+        return v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4
+    r, g, b = map(ch, c)
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def contrast(a, b):
+    hi, lo = sorted((lum(a), lum(b)), reverse=True)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def css(c):
+    return f"rgb({c[0]},{c[1]},{c[2]})"
+
+
+def theme(light, bg, fg, accent):
+    """Tint the ground with the accent as far as Claude's own text stays at 7:1."""
+    bg, accent = rgb(bg), rgb(accent)
+    text = (0, 0, 0) if light else (255, 255, 255)
+    t = 0.45
+    while contrast(mix(bg, accent, t), text) < 7 and t > 0.05:
+        t -= 0.01
+    block = mix(bg, accent, t)
+    return {
+        "userMessageBackground": css(block),
+        "userMessageBackgroundHover": css(mix(bg, accent, t * 1.2)),
+        "composerSidebarBackground": css(block),
+        "promptBorder": css(accent),
+        "promptBorderShimmer": css(mix(accent, text, 0.35 if light else 0.4)),
+        "briefLabelYou": css(accent),
+        "selectionBg": css(mix(bg, accent, t * 1.2)),
+        "text": css(rgb(fg)),
+    }
+
+
+def gen():
+    THEMES.mkdir(parents=True, exist_ok=True)
+    for sid, light, bg, fg, accent in SCHEMES:
+        body = {"name": f"Seance {sid.title()}", "base": "light" if light else "dark",
+                "overrides": theme(light, bg, fg, accent)}
+        (THEMES / f"seance-{sid}.json").write_text(json.dumps(body, indent=2) + "\n")
+        print(f"seance-{sid}.json")
+
+
+def install():
+    THEMES.mkdir(parents=True, exist_ok=True)
+    files = sorted(KIT_THEMES.glob("seance-*.json"))
+    if not files:
+        sys.exit(f"claude-theme: no themes in {KIT_THEMES}; run `claude-theme gen` instead")
+    for f in files:
+        (THEMES / f.name).write_text(f.read_text())
+    print(f"copied {len(files)} themes to {THEMES}")
+
+
+def sync(sid):
+    if sid is None:
+        try:
+            sid = json.loads(SAVED.read_text())["scheme"]
+        except (OSError, ValueError, KeyError):
+            sys.exit(f"claude-theme: no saved Seance theme at {SAVED}. Seance writes it when you pick a "
+                     "theme; if yours doesn't, pass the theme id: claude-theme sync ouija. "
+                     "Or set SAVED_THEME in config.env.")
+    if not (THEMES / f"seance-{sid}.json").exists():
+        sys.exit(f"claude-theme: no Claude theme 'seance-{sid}' in {THEMES}. Run `claude-theme install` "
+                 "(or `gen`), or add the id to SCHEMES and run gen.")
+    try:
+        text = SETTINGS.read_text()
+    except OSError:
+        sys.exit(f"claude-theme: can't read {SETTINGS}. Set CLAUDE_DIR in config.env if Claude Code keeps its settings elsewhere.")
+    # Change only the theme line, so the rest of the file keeps its layout.
+    new, n = re.subn(r'("theme"\s*:\s*)"[^"]*"', rf'\1"custom:seance-{sid}"', text, count=1)
+    if not n:
+        sys.exit(f'claude-theme: {SETTINGS} has no "theme" line to change. Add one, for example '
+                 '"theme": "dark", then run this again.')
+    if new != text:
+        SETTINGS.write_text(new)
+    print(f"{os.uname().nodename}: custom:seance-{sid}")
+    if MAC_SSH and sys.platform != "darwin":
+        remote = cfg("MAC_CLAUDE_THEME")
+        if not remote:
+            sys.exit("claude-theme: MAC_SSH is set but MAC_CLAUDE_THEME is not (the path of this script on the Mac).")
+        r = subprocess.run(MAC_SSH_CMD + [f"{shlex.quote(remote)} sync {shlex.quote(sid)}"],
+                           capture_output=True, text=True, timeout=30)
+        print(r.stdout.strip() or f"Mac not reached: {r.stderr.strip()}")
+
+
+def check():
+    bad = []
+    if not SETTINGS.exists():
+        bad.append(f"{SETTINGS} not found (set CLAUDE_DIR if Claude Code keeps its files elsewhere)")
+    if not SAVED.exists():
+        bad.append(f"{SAVED} not found: Seance has not saved a theme there; use `claude-theme sync <id>` by hand")
+    if MAC_SSH and not cfg("MAC_CLAUDE_THEME"):
+        bad.append("MAC_SSH is set but MAC_CLAUDE_THEME is not")
+    print("\n".join(bad) if bad else "ok")
+    sys.exit(1 if bad else 0)
+
+
+if __name__ == "__main__":
+    args = sys.argv[1:]
+    if args[:1] == ["gen"]:
+        gen()
+    elif args[:1] == ["install"]:
+        install()
+    elif args[:1] == ["check"]:
+        check()
+    elif args[:1] == ["sync"]:
+        sync(args[1] if len(args) > 1 else None)
+    else:
+        sys.exit(__doc__)

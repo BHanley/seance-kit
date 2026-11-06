@@ -1,0 +1,14 @@
+[Unit]
+Description=Invoke (seance-chat): phone chat and push notifications for Seance circles
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+# install.sh fills in __KIT__ (this repo's folder). Config comes from ~/.config/seance-kit/config.env.
+ExecStart=%h/.local/share/seance-kit/venv/bin/python __KIT__/invoke/seance-chat run
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

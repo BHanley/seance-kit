@@ -1,0 +1,1795 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="theme-color" content="#171314">
+<title>Invoke</title>
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/icon-192.png">
+<style>
+/* Two views share one page: the circle list and a circle's thread (#/c/<ws>). */
+:root {
+  --bg: #171314;
+  --bar: #252228;
+  --line: #36323a;
+  --ink: #f4f2f5;
+  --dim: #9b96a0;
+  --me: #7c5cff;
+  --me-ink: #ffffff;
+  --them: #2e2a33;
+  --sys: #3a2a20;
+  --sys-ink: #ffcf9e;
+  --dot: #7c5cff;
+  --bad: #ff6b7d;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
+  font: 16px/1.4 system-ui, -apple-system, Roboto, sans-serif; -webkit-tap-highlight-color: transparent; }
+body { display: flex; flex-direction: column; height: 100dvh; overflow: hidden; }
+header { display: flex; align-items: center; gap: 8px; min-height: 56px;
+  padding: env(safe-area-inset-top) 12px 0; background: var(--bar); border-bottom: 1px solid var(--line); flex: none; }
+header h1 { font-size: 1.15rem; margin: 0; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+.back { width: 44px; height: 44px; font-size: 1.5rem; margin-left: -8px; position: relative; }
+.back .badge { position: absolute; top: 4px; right: -2px; min-width: 18px; height: 18px; font-size: .68rem; padding: 0 4px; }
+.bell { margin-left: 0; display: grid; place-items: center; color: var(--dim); }
+.badge.alert { background: var(--bad); }
+.afk { flex: none; padding: 6px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--dim); font-size: .8rem; }
+.afk.on { background: var(--sys); color: var(--sys-ink); border-color: transparent; font-weight: 700; }
+.pill { padding: 8px 12px; border-radius: 999px; background: var(--me); color: var(--me-ink); font-size: .9rem; }
+main { flex: 1; overflow-y: auto; overscroll-behavior: contain; }
+#list .row { display: flex; gap: 12px; align-items: center; width: 100%; text-align: left;
+  padding: 14px 16px; border-bottom: 1px solid var(--line); min-height: 72px; }
+#list .row:active { background: var(--them); }
+.row, .shead { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.shead { display: flex; align-items: center; gap: 8px; padding: 20px 16px 8px; color: var(--dim);
+  font-size: .78rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; cursor: pointer; }
+.shead .sname { flex: 1; }
+.shead .chev { display: inline-block; transition: transform .15s; }
+.shead .scount { color: var(--dot); }
+.space.collapsed .chev { transform: rotate(-90deg); }
+.space.collapsed .rows { display: none; }
+.space:not(.collapsed) .scount:not(:empty) { display: none; }
+.active .shead { cursor: default; }
+.shead.hot { color: var(--ink); background: color-mix(in srgb, var(--me) 22%, transparent); border-radius: 10px; }
+.rows:empty { min-height: 12px; }
+#toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); transform: translate(-50%, 20px);
+  background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 999px; font-size: .9rem;
+  opacity: 0; transition: opacity .2s, transform .2s; pointer-events: none; z-index: 20; }
+#toast.show { opacity: 1; transform: translate(-50%, 0); }
+.dragging { position: fixed !important; left: 0; right: 0; z-index: 10; pointer-events: none;
+  background: var(--bar); box-shadow: 0 10px 28px rgba(0, 0, 0, .55); border-radius: 12px; opacity: .96; }
+.space.dragging { overflow: hidden; }
+.ph { margin: 2px 8px; border: 1px dashed var(--me); border-radius: 12px;
+  background: color-mix(in srgb, var(--me) 12%, transparent); }
+.hint { color: var(--dim); font-size: .78rem; text-align: center; padding: 20px 16px calc(24px + env(safe-area-inset-bottom)); }
+.avatar { flex: none; width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center;
+  font-weight: 700; background: var(--them); color: var(--dim); }
+.row .mid { flex: 1; min-width: 0; }
+.row .name { font-weight: 600; }
+.row .snip { color: var(--dim); font-size: .9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A circle's character dances while any of its panes is mid-turn. */
+.dance svg { animation: dance .9s ease-in-out infinite; transform-origin: 50% 100%; }
+@keyframes dance {
+  0%, 100% { transform: translateY(0) rotate(0); }
+  25% { transform: translateY(-3px) rotate(-8deg); }
+  50% { transform: translateY(0) scaleY(.92); }
+  75% { transform: translateY(-3px) rotate(8deg); }
+}
+/* Now and then a creature throws in one of these instead. */
+@keyframes jump { 0%, 100% { transform: translateY(0); } 40% { transform: translateY(-9px) scaleY(1.05); } 80% { transform: translateY(0) scaleY(.9); } }
+@keyframes spin { 0% { transform: rotateY(0); } 100% { transform: rotateY(360deg); } }
+@keyframes shimmy { 0%, 100% { transform: translateX(0); } 20%, 60% { transform: translateX(-3px) skewX(8deg); } 40%, 80% { transform: translateX(3px) skewX(-8deg); } }
+@keyframes flip { 0% { transform: rotate(0); } 50% { transform: translateY(-8px) rotate(180deg); } 100% { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .dance svg, .working::before { animation: none !important; } }
+.tsprite { flex: none; width: 30px; height: 30px; display: grid; place-items: center; }
+.tsprite:empty { display: none; }
+.tsprite img { width: 30px; height: 30px; display: block; }
+.tsprite .flame, .tsprite .flame ellipse { transform-box: fill-box; transform-origin: 50% 100%; }
+.tsprite .flame { animation: flicker var(--flicker, 2.6s) ease-in-out infinite; }
+.tsprite .flame ellipse { animation: core var(--core, 1.9s) ease-in-out infinite; }
+.tsprite svg > circle { transform-box: fill-box; transform-origin: center; animation: glow var(--glow, 3.4s) ease-in-out infinite; }
+@keyframes flicker {
+  0%, 100% { transform: scale(1, 1) skewX(0); }
+  20% { transform: scale(.86, 1.2) skewX(5deg); }
+  45% { transform: scale(1.06, .9) skewX(-4deg); }
+  70% { transform: scale(.92, 1.14) skewX(6deg); }
+  85% { transform: scale(1.03, .96) skewX(-2deg); }
+}
+@keyframes core { 0%, 100% { transform: scale(1, 1); } 50% { transform: scale(.75, 1.35); } }
+@keyframes glow { 0%, 100% { opacity: 1; transform: scale(1); } 40% { opacity: .6; transform: scale(.88); } 70% { opacity: .9; transform: scale(1.08); } }
+@media (prefers-reduced-motion: reduce) { .tsprite .flame, .tsprite .flame ellipse, .tsprite svg > circle { animation: none; } }
+/* Two or more panes working: one paper cutout each, in shades of
+   the circle's figure. JS (CREW_MOVES) places each sheet at its own depth, so
+   one passes in front of another without touching it. */
+.tsprite.crew { display: block; position: relative; height: 30px; perspective: 170px; }
+.ring { position: absolute; inset: 0; transform-style: preserve-3d; }
+#party { position: fixed; inset: 0; z-index: 28; overflow: hidden; perspective: 500px;
+  background: radial-gradient(circle, rgba(124, 92, 255, .4), rgba(0, 0, 0, .7)); animation: partyFade 7s linear forwards; }
+#party .ring { animation: partyRing 7s ease-in-out forwards; }
+.confetti { position: absolute; top: -12px; width: 6px; height: 6px; animation: partyFall var(--d) linear forwards; }
+@keyframes partyFade { 0% { opacity: 0; } 8%, 90% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes partyRing {
+  0% { transform: scale(0) rotate(-200deg); }
+  12%, 88% { transform: scale(var(--s)) rotate(0); }
+  100% { transform: scale(0) rotate(200deg); }
+}
+@keyframes partyFall { to { transform: translate3d(var(--dx), 110vh, 0) rotate3d(1, 1, .3, 900deg); } }
+.avatar.crew { position: relative; perspective: 170px; }
+.avatar.crew .ring { transform: scale(.62); }
+.cut { position: absolute; left: 50%; top: 50%; margin: -12px; width: 24px; height: 24px; transform-style: preserve-3d; }
+.cut svg { width: 24px; height: 24px; display: block; filter: drop-shadow(.8px 0 0 rgba(0, 0, 0, .5));
+  animation: sheet 1.7s ease-in-out infinite; animation-delay: calc(var(--i) * -.45s); }
+@keyframes sheet {
+  0%, 100% { transform: translateY(0) rotateY(-40deg); }
+  25% { transform: translateY(-3px) rotateY(0); }
+  50% { transform: translateY(0) rotateY(40deg); }
+  75% { transform: translateY(-3px) rotateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ring { display: flex; align-items: center; justify-content: space-between; }
+  .cut { position: static; margin: 0; }
+  .cut svg { animation: none; }
+}
+.working { display: inline-flex; align-items: center; gap: 5px; color: var(--dot); font-weight: 600; }
+.working::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor;
+  animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .25; } }
+.row .side { flex: none; display: grid; justify-items: end; gap: 4px; color: var(--dim); font-size: .8rem; }
+.badge { min-width: 22px; height: 22px; padding: 0 6px; border-radius: 11px; background: var(--dot);
+  color: #fff; font-size: .78rem; font-weight: 700; display: grid; place-items: center; }
+.row.quiet .name { color: var(--dim); font-weight: 500; }
+#thread { padding: 12px 12px 4px; display: flex; flex-direction: column; gap: 6px; }
+.msg { max-width: 85%; padding: 8px 12px; border-radius: 18px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.msg.me { align-self: flex-end; background: var(--me); color: var(--me-ink); border-bottom-right-radius: 6px; }
+.msg.lead { align-self: flex-start; background: var(--them); border-bottom-left-radius: 6px; }
+.msg.system { align-self: center; background: var(--sys); color: var(--sys-ink); font-size: .88rem; max-width: 92%; }
+.msg a { color: inherit; text-decoration: underline; }
+.choices { align-self: flex-start; display: flex; flex-wrap: wrap; gap: 6px; max-width: 92%; margin: 0 0 2px; }
+.choices button { padding: 8px 14px; border-radius: 999px; border: 1px solid var(--me); color: var(--ink); font-size: .9rem; }
+.choices button.first { background: color-mix(in srgb, var(--me) 22%, transparent); }
+.spec { border: 1px solid var(--me); }
+.spec-head { font-weight: 600; margin-bottom: 6px; }
+.spec-head small { display: block; font-weight: 400; font-size: .72rem; letter-spacing: .04em; text-transform: uppercase; opacity: .7; }
+.choices button.picked { background: var(--me); color: var(--me-ink); }
+.choices button:disabled:not(.picked) { opacity: .4; }
+.meta .ticks { letter-spacing: -.25em; color: var(--dim); font-weight: 700; padding-right: .25em; }
+.meta .ticks.seen { color: var(--me); }
+.meta { font-size: .72rem; color: var(--dim); margin: -2px 6px 4px; }
+.meta.me { align-self: flex-end; }
+.meta.lead { align-self: flex-start; }
+.meta.system { align-self: center; }
+.meta.bad { color: var(--bad); }
+.meta .now { color: var(--me); font-weight: 700; font-size: .78rem; padding: 6px 4px; margin: -6px 0; }
+.meta .now:disabled { color: var(--dim); }
+.day { align-self: center; color: var(--dim); font-size: .75rem; margin: 10px 0 4px; }
+.working { align-self: flex-start; color: var(--dim); font-size: .85rem; padding: 4px 6px; }
+.working span { animation: blink 1.4s infinite both; }
+.working span:nth-child(2) { animation-delay: .2s; } .working span:nth-child(3) { animation-delay: .4s; }
+@keyframes blink { 0%, 80%, 100% { opacity: .2; } 40% { opacity: 1; } }
+form { flex: none; display: flex; gap: 8px; align-items: flex-end; padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+  background: var(--bar); border-top: 1px solid var(--line); }
+textarea { flex: 1; resize: none; max-height: 40dvh; min-height: 44px; padding: 10px 14px; border-radius: 22px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--ink); font: inherit; line-height: 1.35; }
+textarea:focus { outline: none; border-color: var(--me); }
+.attach { flex: none; width: 44px; height: 44px; border-radius: 50%; color: var(--dim); display: grid; place-items: center; }
+.attach:disabled { opacity: .4; }
+.msg video { display: block; max-width: 100%; max-height: 60dvh; border-radius: 10px; background: #000; }
+.msg video:not(:last-child) { margin-bottom: 6px; }
+.msg img { display: block; max-width: 100%; max-height: 60dvh; border-radius: 10px; }
+.msg a:has(img):not(:last-child) img { margin-bottom: 6px; }
+.send { flex: none; width: 44px; height: 44px; border-radius: 50%; background: var(--me); color: #fff; display: grid; place-items: center; }
+.send:disabled { opacity: .4; }
+.empty { color: var(--dim); text-align: center; padding: 48px 24px; }
+.hidden { display: none !important; }
+#usage { display: flex; justify-content: center; gap: 14px; padding: 5px 14px; font-size: .78rem; color: var(--dim);
+  background: var(--bar); border-bottom: 1px solid var(--line); flex: none; }
+#usage .rs { display: inline-flex; vertical-align: -1px; margin-right: 3px; }
+#usage b { color: var(--ink); font-weight: 600; }
+#usage .hot b { color: var(--bad); }
+/* Tap the creature: a move and a line; five quick taps, a seance party. */
+#egg { position: fixed; z-index: 30; max-width: 220px; padding: 6px 10px; border-radius: 10px; background: var(--them); color: var(--ink);
+  font-size: .82rem; box-shadow: 0 4px 14px rgba(0, 0, 0, .35); pointer-events: none; transition: opacity .3s; }
+#usage .warm b { color: #e8c34a; }
+#usage .high b { color: #ff9f43; }
+#usage button { color: #ff9f43; font-weight: 700; font-size: inherit; padding: 0 2px; margin-left: 6px; text-decoration: underline; }
+/* The lead's to-do list: a sheet from the checklist icon in a thread's title bar. */
+.prs { flex: none; display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border-radius: 16px; border: 1px solid var(--line); color: var(--ink); font-size: .85rem; white-space: nowrap; }
+.dot { flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--dim); }
+.dot.good { background: #4caf7d; }
+.dot.bad { background: #e5604d; }
+.dot.busy { background: #e9a03a; }
+#actsBody { min-height: 0; overflow-y: auto; }
+.prrow { display: flex; gap: 12px; align-items: baseline; padding: 12px 4px; color: var(--ink); text-decoration: none; }
+.prrow small { display: block; color: var(--dim); margin-top: 2px; }
+.todo { margin-left: 0; display: grid; place-items: center; color: var(--dim); }
+.todo .badge { background: var(--me); }
+/* A picture full screen, inside the app: back or × closes it, a tap zooms it. */
+#viewer { position: fixed; inset: 0; z-index: 27; background: #000; }
+#viewerPan { width: 100%; height: 100%; overflow: auto; display: flex; }
+#viewerImg { margin: auto; max-width: 100%; max-height: 100%; }
+#viewer.zoomed #viewerImg { max-width: none; max-height: none; width: 250%; }
+#viewerClose, #viewerSave { position: absolute; top: 10px; padding: 8px 14px; border: 0; border-radius: 10px;
+  background: rgba(0, 0, 0, .55); color: #fff; font-size: 1rem; text-decoration: none; }
+#viewerClose { right: 10px; font-size: 1.4rem; line-height: 1; }
+#viewerSave { left: 10px; }
+#share { position: fixed; inset: 0; z-index: 16; background: rgba(0, 0, 0, .5); display: flex; align-items: flex-end; }
+#share .sheet { width: 100%; max-height: 85dvh; overflow-y: auto; background: var(--bar); border-radius: 18px 18px 0 0;
+  padding: 6px 16px calc(16px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); }
+#share .grip { width: 40px; height: 4px; border-radius: 2px; background: var(--line); margin: 4px auto 10px; }
+#share h2 { font-size: 1.05rem; margin: 0 0 10px; }
+#sharePreview img, #sharePreview video { display: block; max-width: 100%; max-height: 30dvh; border-radius: 10px; margin: 0 auto 10px; }
+#shareText { width: 100%; margin-bottom: 8px; }
+#shareList .row { display: flex; gap: 12px; align-items: center; width: 100%; text-align: left; padding: 10px 4px; border-top: 1px solid var(--line); }
+#shareList .row:disabled { opacity: .5; }
+#tasks { position: fixed; inset: 0; z-index: 15; background: rgba(0, 0, 0, .5); display: flex; align-items: flex-end; }
+#tasks .sheet { width: 100%; max-height: 80dvh; overflow-y: auto; background: var(--bar); border-radius: 18px 18px 0 0;
+  padding: 6px 16px calc(16px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); }
+#tasks .grip { width: 40px; height: 4px; border-radius: 2px; background: var(--line); margin: 4px auto 10px; }
+#tasks h2 { font-size: 1.05rem; margin: 0 0 4px; }
+#tasks h3 { color: var(--dim); font-size: .74rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; margin: 16px 0 6px; }
+#tasks .task { display: flex; gap: 10px; align-items: flex-start; width: 100%; text-align: left; padding: 9px 0; border-top: 1px solid var(--line); }
+#tasks h3 + .task { border-top: 0; }
+#tasks .box { flex: none; width: 18px; height: 18px; margin-top: 2px; border-radius: 5px; border: 2px solid var(--dim); display: grid; place-items: center; }
+#tasks .now .box { border-color: var(--dot); }
+#tasks .now .box::after { content: ""; width: 8px; height: 8px; border-radius: 2px; background: var(--dot); animation: pulse 1.2s ease-in-out infinite; }
+#tasks .done .box { background: var(--dim); border-color: var(--dim); color: var(--bar); font-size: .7rem; font-weight: 900; }
+#tasks .done .box::after { content: "✓"; }
+#tasks .tx { flex: 1; min-width: 0; }
+#tasks .what { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+#tasks .task.open .what { display: block; white-space: pre-wrap; }
+#tasks .done .what { color: var(--dim); }
+#tasks .said { color: var(--dim); font-size: .85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#tasks .task.open .said { white-space: pre-wrap; }
+#tasks .resume { flex: none; align-self: center; width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center;
+  background: color-mix(in srgb, var(--me) 22%, transparent); color: var(--me); }
+#tasks .resume:active, #tasks .resume.busy { background: var(--me); color: var(--me-ink); }
+#tasks .sub { color: var(--dim); font-size: .8rem; margin-top: 2px; }
+#tasks .prog { color: var(--dot); }
+#tasks .none { color: var(--dim); font-size: .9rem; padding: 4px 0; }
+@media (prefers-reduced-motion: reduce) { #tasks .now .box::after { animation: none; } }
+/* Peek, actions and search */
+#peek, #acts { position: fixed; inset: 0; z-index: 15; background: rgba(0, 0, 0, .5); display: flex; align-items: flex-end; }
+#peek .sheet, #acts .sheet { width: 100%; max-height: 85dvh; display: flex; flex-direction: column; background: var(--bar); border-radius: 18px 18px 0 0;
+  padding: 6px 16px calc(16px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); }
+#acts .sheet { overflow-y: auto; }
+#peek .grip, #acts .grip { flex: none; width: 40px; height: 4px; border-radius: 2px; background: var(--line); margin: 4px auto 10px; }
+#peekTabs { flex: none; display: flex; gap: 6px; overflow-x: auto; padding-bottom: 8px; align-items: center; }
+#peekTabs button { flex: none; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line); color: var(--dim); font-size: .85rem; }
+#peekTabs button.on { background: var(--me); border-color: transparent; color: var(--me-ink); }
+#peekText { flex: 1; min-height: 40dvh; margin: 0; padding: 10px; overflow: auto; border-radius: 10px; background: #0b0d10; color: #d7dce2;
+  font: .72rem/1.35 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre; }
+#peekStop { flex: none; margin-top: 10px; padding: 10px; border-radius: 12px; background: var(--bad); color: #1b1820; font-weight: 700; }
+#acts h2 { font-size: 1.05rem; margin: 0 0 8px; }
+#acts .item { display: flex; gap: 12px; align-items: center; width: 100%; text-align: left; padding: 12px 4px; border-top: 1px solid var(--line); }
+#acts .when { display: flex; gap: 8px; padding-top: 10px; border-top: 1px solid var(--line); }
+#acts input { flex: 1; min-width: 0; min-height: 44px; padding: 8px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); font: inherit; }
+#acts .set { padding: 0 16px; border-radius: 12px; background: var(--me); color: var(--me-ink); font-weight: 700; }
+.meta .more { color: var(--dim); font-weight: 700; padding: 6px 8px; margin: -6px 0; letter-spacing: .05em; }
+.msg.flash { outline: 2px solid var(--me); outline-offset: 2px; }
+.msg a.file { display: flex; gap: 8px; align-items: center; padding: 6px 2px; text-decoration: none; font-weight: 600; overflow-wrap: anywhere; }
+#quick { flex: none; display: flex; gap: 6px; overflow-x: auto; padding: 6px 10px 0; background: var(--bar); border-top: 1px solid var(--line); }
+#quick + form { border-top: 0; }
+#quick button { flex: none; padding: 5px 12px; border-radius: 999px; border: 1px solid var(--line); color: var(--ink); font-size: .85rem; }
+#quick .stopchip { display: inline-flex; align-items: center; padding: 3px 10px; }
+#searchBar { padding: 8px 12px; }
+#q { width: 100%; min-height: 44px; padding: 8px 14px; border-radius: 22px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); font: inherit; }
+#results .hit { display: block; width: 100%; text-align: left; padding: 10px 2px; border-bottom: 1px solid var(--line); }
+#results .top { display: flex; justify-content: space-between; gap: 8px; color: var(--dim); font-size: .8rem; }
+#results .tx { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+#list .row { touch-action: pan-y; }
+#offline { background: var(--sys); color: var(--sys-ink); text-align: center; font-size: .85rem; padding: 6px; flex: none; }
+</style>
+</head>
+<body>
+<header>
+  <button class="back hidden" id="back" aria-label="Back">‹<span class="badge hidden" id="others"></span></button>
+  <span class="tsprite" id="tsprite"></span>
+  <h1 id="title">Invoke</h1>
+  <button class="prs hidden" id="prsBtn"></button>
+  <button class="back todo hidden" id="peekBtn" aria-label="Peek at the panes" title="Peek at the panes">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></svg>
+  </button>
+  <button class="back todo hidden" id="todo" aria-label="Lead's tasks">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5l1.5 1.5 3-3M4 13.5l1.5 1.5 3-3"/><path d="M11.5 7h8.5M11.5 14h8.5M11.5 20h8.5"/><rect x="4" y="18.5" width="3.5" height="3" rx=".6"/></svg>
+    <span class="badge hidden" id="todoCount"></span>
+  </button>
+  <button class="back bell hidden" id="findBtn" aria-label="Search" title="Search">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg>
+  </button>
+  <button class="back bell hidden" id="bell" aria-label="Alerts">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></svg>
+    <span class="badge alert hidden" id="bellCount"></span>
+  </button>
+  <button class="afk hidden" id="afk"></button>
+  <button class="pill hidden" id="notify">Turn on notifications</button>
+</header>
+<div id="usage" class="hidden"></div>
+<div id="offline" class="hidden">Can't reach the server. Is your VPN (Tailscale, if you use it) on?</div>
+<main id="scroll">
+  <div id="searchBar" class="hidden"><input id="q" type="search" placeholder="Search every circle" autocomplete="off"><div id="results"></div></div>
+  <div id="list"></div>
+  <div id="thread" class="hidden"></div>
+</main>
+<div id="toast" role="status"></div>
+<div id="share" class="hidden"><div class="sheet" role="dialog" aria-label="Share to a circle"><div class="grip"></div>
+  <h2>Send to…</h2><div id="sharePreview"></div>
+  <textarea id="shareText" rows="2" placeholder="Add a message (optional)"></textarea>
+  <div id="shareList"></div></div></div>
+<div id="tasks" class="hidden"><div class="sheet" role="dialog" aria-label="Lead's tasks"><div class="grip"></div><div id="taskBody"></div></div></div>
+<div id="peek" class="hidden"><div class="sheet" role="dialog" aria-label="Peek at a pane"><div class="grip"></div>
+  <div id="peekTabs"></div><pre id="peekText"></pre><button id="peekStop" class="hidden">Stop</button></div></div>
+<div id="viewer" class="hidden"><div id="viewerPan"></div>
+  <a id="viewerSave" download>Save</a><button id="viewerClose" aria-label="Close">×</button></div>
+<div id="acts" class="hidden"><div class="sheet" role="dialog"><div class="grip"></div><div id="actsBody"></div></div></div>
+<div id="quick" class="hidden"></div>
+<form id="composer" class="hidden">
+  <button type="button" class="attach" id="attachBtn" aria-label="Send a photo or file">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 11.5l-8.2 8.2a5 5 0 0 1-7.1-7.1l8.5-8.5a3.4 3.4 0 0 1 4.8 4.8l-8.3 8.3a1.7 1.7 0 0 1-2.4-2.4l7.7-7.7"/></svg>
+  </button>
+  <input type="file" id="pickPhoto" accept="image/*,video/*" multiple hidden>
+  <input type="file" id="pick" accept=".pdf,.csv,.tsv,.txt,.md,.json,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.key,.numbers,.pages,.zip" multiple hidden>
+  <textarea id="text" rows="1" placeholder="Message the lead" enterkeyhint="enter"></textarea>
+  <button class="send" id="sendBtn" aria-label="Send" disabled>
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M3 20.5v-6l8-2.5-8-2.5v-6L22 12z"/></svg>
+  </button>
+</form>
+<script>
+if (/[?&]tune\b/.test(location.search + location.hash)) {
+  const s = document.createElement("script");
+  s.src = "tune.js";
+  s.onload = () => tune([
+    { name: "--flicker", label: "Flame shape", min: 0.8, max: 6, step: 0.1, value: 2.6, unit: "s" },
+    { name: "--core", label: "Flame core", min: 0.6, max: 5, step: 0.1, value: 1.9, unit: "s" },
+    { name: "--glow", label: "Glow", min: 1, max: 8, step: 0.1, value: 3.4, unit: "s" },
+  ]);
+  document.head.append(s);
+}
+</script>
+<script>
+const $ = id => document.getElementById(id);
+const state = { circles: [], spaces: [], ws: null, msgs: [], v: 0, names: {}, seeds: {}, working: false, drafts: {}, sig: "" };
+
+async function api(path, body, signal) {
+  const r = await fetch(path, body === undefined ? { signal } :
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.status);
+  $("offline").classList.add("hidden");
+  return r.json();
+}
+
+function when(ts) {
+  const d = new Date(ts), now = new Date();
+  if (d.toDateString() === now.toDateString())
+    return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  return d.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+function linkify(el, text) {
+  const re = /https?:\/\/[^\s<>"')\]]+/g;
+  let last = 0, m;
+  while ((m = re.exec(text))) {
+    el.append(text.slice(last, m.index));
+    const a = document.createElement("a");
+    a.href = a.textContent = m[0];
+    a.target = "_blank"; a.rel = "noopener";
+    el.append(a);
+    last = m.index + m[0].length;
+  }
+  el.append(text.slice(last));
+}
+
+// ── creatures: a port of Seance's src/app/sprite.rs, so each circle gets the
+// same 10x10 pixel creature its lead pane shows in Seance ──
+const SPRITE_BODY = ["#8fa67a", "#7a95b0", "#a38bb0", "#b8a27a", "#b0846e", "#6fa3a0", "#b07f8a", "#8a92a3"];
+const MASK = (1n << 64n) - 1n;
+
+function sprite(seed) {
+  let h = 0xcbf29ce484222325n;
+  for (const b of new TextEncoder().encode(seed)) h = ((h ^ BigInt(b)) * 0x100000001b3n) & MASK;
+  let x = h | 1n;
+  const below = n => {
+    x ^= (x << 13n) & MASK; x ^= x >> 7n; x ^= (x << 17n) & MASK;
+    return Number(x % BigInt(n));
+  };
+  const cells = Array.from({ length: 10 }, () => Array(10).fill(0));  // 0 empty, 1 body, 2 eye
+  const set = (row, half, c) => { cells[row][4 - half] = c; cells[row][5 + half] = c; };
+  const widths = Array(10).fill(0);
+  let w = 2 + below(3);
+  for (let row = 2; row < 8; row++) {
+    widths[row] = row === 3 || row === 4 ? Math.max(w, 3) : w;
+    for (let half = 0; half < widths[row]; half++) set(row, half, 1);
+    w = Math.min(4, Math.max(2, w + below(3) - 1));
+  }
+  const eyeRow = 3 + below(2);
+  set(eyeRow, 1 + below(widths[eyeRow] - 2), 2);
+  const top = below(3);
+  if (top === 1) {
+    set(1, widths[2] - 1, 1);
+    if (below(2) === 0) set(0, widths[2] - 1, 1);
+  } else if (top === 2) {
+    set(1, 0, 1);
+    set(0, below(2), 1);
+  }
+  const leg = 1 + below(widths[7] - 1);
+  set(8, leg, 1); set(9, leg, 1);
+  if (below(2) === 0) set(9, leg + 1, 1);
+  return { cells, color: SPRITE_BODY[below(8)] };
+}
+
+// Working creatures dance out of step, each throwing in a random move now and then.
+const MOVES = ["jump", "spin", "shimmy", "flip"];
+if (!matchMedia("(prefers-reduced-motion: reduce)").matches) setInterval(() => {
+  for (const svg of document.querySelectorAll(".dance svg")) {
+    if (!svg.dataset.off) { svg.dataset.off = -Math.random() + "s"; svg.style.animationDelay = svg.dataset.off; }
+    if (svg.dataset.move || Math.random() > .12) continue;
+    svg.dataset.move = 1;
+    svg.style.animation = MOVES[Math.floor(Math.random() * MOVES.length)] + " .9s ease-in-out 1";
+    svg.addEventListener("animationend", () => { svg.style.animation = ""; svg.style.animationDelay = svg.dataset.off; delete svg.dataset.move; }, { once: true });
+  }
+}, 900);
+
+function spriteSvg(seed, shade) {
+  const { cells, color: body } = sprite(seed), color = shade || body;
+  let rects = "";
+  cells.forEach((row, y) => row.forEach((c, x) => {
+    if (c) rects += `<rect x="${x}" y="${y}" width="1" height="1" fill="${c === 2 ? "#1b1c18" : color}"/>`;
+  }));
+  return `<svg viewBox="-1 -1 12 12" width="30" height="30" shape-rendering="crispEdges" aria-hidden="true">${rects}</svg>`;
+}
+
+// The same figure, a step lighter or darker per pane: 0 is the circle's own color.
+const CREW_MAX = 6, CREW_SHADES = [0, .3, -.3, .55, -.5, .75];
+function crewShade(hex, i) {
+  const step = CREW_SHADES[i % CREW_SHADES.length], to = step > 0 ? 255 : 0;
+  const rgb = [1, 3, 5].map(at => parseInt(hex.slice(at, at + 2), 16));
+  return `rgb(${rgb.map(v => Math.round(v + (to - v) * Math.abs(step))).join()})`;
+}
+function crewHtml(seed, crew, r, key) {
+  const { color } = sprite(seed);
+  const cuts = crew.map((pane, i) => `<span class="cut" style="--i:${i}">${spriteSvg(seed, crewShade(color, pane))}</span>`);
+  return `<span class="ring" data-r="${r}" data-key="${key}">${cuts.join("")}</span>`;
+}
+
+// The crew's dance: every move places sheet i of n at time t (seconds) within a
+// ring of radius r. x right, y down, z toward the viewer, ry and rz in degrees.
+const TAU = Math.PI * 2, { sin, cos, abs, max, min, floor, ceil, PI } = Math;
+const spread = (i, n) => n > 1 ? 2 * i / (n - 1) - 1 : 0;  // -1 to 1 along a line
+const CREW_MOVES = {
+  circle(i, n, t, r) { const a = t * 1.25 + TAU * i / n; return { x: r * sin(a), y: r * .34 * cos(a), z: r * cos(a) }; },
+  eight(i, n, t, r) { const a = t * 1.4 + TAU * i / n; return { x: r * sin(a), y: 7 * sin(2 * a), z: r * .6 * cos(a) }; },
+  conga(i, n, t, r) { const a = t * 1.2 - i * .7; return { x: r * sin(a), y: 5 * sin(t * 3 - i * 1.2), z: 12 * cos(a) }; },
+  kickline(i, n, t, r) { const a = t * 6 - i * .9; return { x: spread(i, n) * r, y: 3 - 12 * max(0, sin(a)), z: 0, rz: 12 * sin(a) }; },
+  totem(i, n, t) { return { x: 4 * sin(t * 3 + i), y: (i - (n - 1) / 2) * min(9, 34 / n), z: i * 7, rz: 6 * sin(t * 3 + i) }; },
+  dosado(i, n, t, r) {
+    const pairs = ceil(n / 2), c = pairs > 1 ? (floor(i / 2) / (pairs - 1) * 2 - 1) * r * .7 : 0;
+    const a = t * 2.4 + (i % 2 ? PI : 0);
+    return { x: c + 11 * cos(a), y: 2 * sin(a), z: 12 * sin(a) };
+  },
+  leapfrog(i, n, t, r) {
+    const p = (t * .55 + i / n) % 1;
+    if (p < .7) return { x: (p / .7 * 2 - 1) * r, y: 6, z: 0 };
+    const q = (p - .7) / .3;
+    return { x: (1 - q * 2) * r, y: 6 - 24 * sin(PI * q), z: -10 * sin(PI * q), rz: -360 * q };
+  },
+  burst(i, n, t, r) {
+    const a = TAU * i / n, k = .3 + .7 * abs(sin(t * 2));
+    return { x: r * k * sin(a), y: -12 * k * cos(a), z: r * k * cos(a) * .5, rz: 15 * sin(t * 2) };
+  },
+  cartwheel(i, n, t, r) { const x = r * sin(t * 1.2 + spread(i, n)); return { x, y: 2, z: spread(i, n) * 14, rz: x * 16 }; },
+  swing(i, n, t, r) { const a = 1.1 * sin(t * 2.4 + i * .35); return { x: r * sin(a) + spread(i, n) * 6, y: 9 - 16 * cos(a), z: i * 5, rz: -a * 40 }; },
+  whirl(i, n, t, r) { const a = t * 2.4 + TAU * i / n, k = .55 + .45 * sin(t * 1.3); return { x: r * k * sin(a), y: r * k * .34 * cos(a), z: r * k * cos(a), ry: t * 180 % 360 }; },
+  flip(i, n, t, r) { return { x: spread(i, n) * r, y: 4 * sin(t * 3 + i), z: 0, ry: (t * 150 + i * 70) % 360 }; },
+};
+const CREW_NAMES = Object.keys(CREW_MOVES);
+const crewDances = new Map();  // ring key -> its dance, kept while the list redraws its rows
+let crewRaf = 0;
+const CREW_BLEND = .9;  // seconds to walk from one move to the next
+function crewPlace(move, i, n, t, r) { return { x: 0, y: 0, z: 0, ry: 0, rz: 0, ...CREW_MOVES[move](i, n, t, r) }; }
+function crewTick(ms) {
+  const rings = document.querySelectorAll(".ring"), t = ms / 1000;
+  if (!rings.length) { crewRaf = 0; return; }
+  for (const ring of rings) {
+    let d = crewDances.get(ring.dataset.key);
+    if (!d) crewDances.set(ring.dataset.key, d = { from: "circle", to: "circle", began: 0, next: t + (ring.dataset.fast ? 1.5 : 4) });
+    const r = +ring.dataset.r, cuts = ring.children, n = cuts.length;
+    if (t >= d.next) {  // a new move, never the one just danced
+      d.from = d.to; d.began = t; d.next = t + (ring.dataset.fast ? 1.5 : 3.5 + Math.random() * 3);
+      const others = CREW_NAMES.filter(m => m !== d.to);
+      d.to = others[floor(Math.random() * others.length)];
+    }
+    const b = min(1, (t - d.began) / CREW_BLEND), ease = b * b * (3 - 2 * b);
+    for (let i = 0; i < n; i++) {
+      const a = crewPlace(d.from, i, n, t, r), c = crewPlace(d.to, i, n, t, r);
+      const v = k => a[k] + (c[k] - a[k]) * ease;
+      cuts[i].style.transform = `translate3d(${v("x")}px,${v("y")}px,${v("z")}px) rotateY(${v("ry")}deg) rotateZ(${v("rz")}deg)`;
+    }
+  }
+  crewRaf = requestAnimationFrame(crewTick);
+}
+const CREW_STILL = matchMedia("(prefers-reduced-motion: reduce)").matches;
+function crewStart() { if (!crewRaf && !CREW_STILL) crewRaf = requestAnimationFrame(crewTick); }
+
+// ── circle list: Seance's spaces and circles, in Seance's order ──
+const collapsed = new Set((() => { try { return JSON.parse(localStorage.getItem("collapsed") || "[]"); } catch { return []; } })());
+function saveCollapsed() { try { localStorage.setItem("collapsed", JSON.stringify([...collapsed])); } catch {} }
+
+function circleRow(c) {
+  const row = document.createElement("button");
+  row.className = "row" + (c.last ? "" : " quiet");
+  row.dataset.ws = c.ws;
+  row.onclick = () => { if (!drag.justDropped && Date.now() - (state.swiped || 0) > 500) location.hash = "#/c/" + encodeURIComponent(c.ws); };
+  const av = document.createElement("div");
+  const crew = !CREW_STILL && (c.crew || []).length > 1 ? c.crew.slice(0, CREW_MAX) : null;
+  av.className = "avatar" + (crew ? " crew" : c.working ? " dance" : "");
+  if (c.ws === "alerts") av.textContent = "!";
+  else if (crew) { av.innerHTML = crewHtml(c.seed || c.ws, crew, max(15, 4.2 * crew.length), "list:" + c.ws); crewStart(); }
+  else av.innerHTML = spriteSvg(c.seed || c.ws);
+  const mid = document.createElement("div");
+  mid.className = "mid";
+  const name = document.createElement("div");
+  name.className = "name"; name.textContent = c.name;
+  const snip = document.createElement("div");
+  snip.className = "snip";
+  snip.textContent = c.last ? (c.last.from === "me" ? "You: " : "") + (c.last.text.split("\n")[0] || (c.last.image ? (isVideo(c.last.image) ? "Video" : "Photo") : "")) : "No messages yet";
+  mid.append(name, snip);
+  const side = document.createElement("div");
+  side.className = "side";
+  if (c.working) side.insertAdjacentHTML("beforeend", '<span class="working">working</span>');
+  else if (c.last) side.append(when(c.last.ts));
+  if (c.unread) { const b = document.createElement("span"); b.className = "badge"; b.textContent = c.unread; side.append(b); }
+  row.append(av, mid, side);
+  return row;
+}
+
+const ACTIVE_MS = 2 * 3600 * 1000;
+
+// Alerts lives behind a bell in the list's title bar, with its unread count.
+function showBell(a) {
+  const b = $("bell");
+  b.classList.toggle("hidden", !!state.ws || !a);
+  $("bellCount").textContent = a?.unread || "";
+  $("bellCount").classList.toggle("hidden", !a?.unread);
+}
+$("bell").onclick = () => { location.hash = "#/c/alerts"; };
+
+function renderList() {
+  if (drag.el || drag.timer) { drag.stale = true; return; }  // redraw after the drop
+  const el = $("list");
+  el.replaceChildren();
+  const byWs = Object.fromEntries(state.circles.map(c => [c.ws, c]));
+  showBell(byWs.alerts);
+  // Active: chats with unread messages or a message in the last 2 hours,
+  // newest first, lifted out of their space until they cool off.
+  const active = state.circles
+    .filter(c => c.ws !== "alerts" && (c.unread || (c.last && Date.now() - c.last.ts < ACTIVE_MS)))
+    .sort((a, b) => (b.last?.ts || 0) - (a.last?.ts || 0));
+  const lifted = new Set(active.map(c => c.ws));
+  if (active.length) {
+    const sec = document.createElement("section");
+    sec.className = "active";  // not a .space: no dragging in or out of it
+    sec.innerHTML = '<div class="shead"><span class="sname">Active</span></div>';
+    const rows = document.createElement("div");
+    rows.className = "rows";
+    for (const c of active) rows.append(circleRow(c));
+    sec.append(rows);
+    el.append(sec);
+  }
+  for (const sp of state.spaces) {
+    const sec = document.createElement("section");
+    sec.className = "space" + (collapsed.has(sp.id) ? " collapsed" : "");
+    sec.dataset.id = sp.id;
+    const head = document.createElement("div");
+    head.className = "shead";
+    const here = sp.circles.filter(ws => !lifted.has(ws));
+    const unread = here.reduce((n, ws) => n + (byWs[ws]?.unread || 0), 0);
+    head.innerHTML = '<span class="chev">▾</span><span class="sname"></span><span class="scount"></span>';
+    head.querySelector(".sname").textContent = sp.name;
+    if (unread) head.querySelector(".scount").textContent = unread;
+    head.onclick = () => {
+      if (drag.justDropped) return;
+      sec.classList.toggle("collapsed");
+      sec.classList.contains("collapsed") ? collapsed.add(sp.id) : collapsed.delete(sp.id);
+      saveCollapsed();
+    };
+    const rows = document.createElement("div");
+    rows.className = "rows";
+    for (const ws of here) if (byWs[ws]) rows.append(circleRow(byWs[ws]));
+    if (!sp.circles.length) head.querySelector(".scount").textContent = "empty";
+    sec.append(head, rows);
+    el.append(sec);
+  }
+  if (!state.circles.length) el.innerHTML = '<div class="empty">No circles found.</div>';
+  else el.insertAdjacentHTML("beforeend", '<div class="hint">Hold and drag a circle to move it to another space</div>');
+  setBadge(state.circles.reduce((n, c) => n + c.unread, 0));
+}
+
+// ── drag to reorder (hold ~0.45 s, then drag) ──
+const drag = { el: null, ph: null, hot: null, timer: 0, pid: null, offset: 0, y: 0,
+  from: null, home: null, justDropped: false, stale: false };
+
+$("list").addEventListener("pointerdown", e => {
+  const el = e.target.closest(".space .row");
+  if (!el || e.button > 0 || drag.el || drag.timer) return;  // one finger at a time
+  const target = el.classList.contains("shead") ? el.parentElement : el;
+  const x0 = e.clientX, y0 = e.clientY, pid = e.pointerId;
+  // Moving first means scrolling: drop the hold. Lifting early: a tap.
+  const off = (redraw = true) => {
+    clearTimeout(drag.timer); drag.timer = 0;
+    removeEventListener("pointermove", move); removeEventListener("pointerup", up); removeEventListener("pointercancel", up);
+    if (redraw && drag.stale && !drag.el) { drag.stale = false; renderList(); }  // held back during the hold
+  };
+  const move = ev => { if (ev.pointerId === pid && Math.hypot(ev.clientX - x0, ev.clientY - y0) > 8) off(); };
+  const up = ev => { if (ev.pointerId === pid) off(); };
+  drag.timer = setTimeout(() => { off(false); startDrag(target, y0, pid); }, 450);
+  addEventListener("pointermove", move); addEventListener("pointerup", up); addEventListener("pointercancel", up);
+});
+$("list").addEventListener("contextmenu", e => e.preventDefault());
+// Once a drag starts, the finger moves the row, not the page.
+$("list").addEventListener("touchmove", e => { if (drag.el) e.preventDefault(); }, { passive: false });
+
+function startDrag(el, y, pid) {
+  if (!el.isConnected) return;  // the list redrew during the hold
+  const isSpace = el.classList.contains("space");
+  drag.home = { parent: el.parentElement, next: el.nextSibling };
+  drag.wasCollapsed = isSpace && el.classList.contains("collapsed");
+  if (isSpace) el.classList.add("collapsed");  // lift a space as just its header
+  const r = el.getBoundingClientRect();
+  drag.el = el; drag.pid = pid; drag.y = y; drag.offset = Math.min(y - r.top, r.height);
+  drag.from = el.closest(".space")?.dataset.id;
+  drag.ph = document.createElement("div");
+  drag.ph.className = "ph";
+  drag.ph.style.height = r.height + "px";
+  el.after(drag.ph);
+  el.classList.add("dragging");
+  Object.assign(el.style, { top: r.top + "px", height: r.height + "px" });
+  navigator.vibrate?.(15);
+  addEventListener("pointermove", onDrag);
+  addEventListener("pointerup", endDrag);
+  addEventListener("pointercancel", cancelDrag);
+  requestAnimationFrame(autoScroll);
+}
+
+function onDrag(e) {
+  if (!drag.el || e.pointerId !== drag.pid) return;
+  drag.y = e.clientY;
+  drag.el.style.top = drag.y - drag.offset + "px";
+  place();
+}
+
+function setHot(head) {
+  if (drag.hot === head) return;
+  drag.hot?.classList.remove("hot");
+  drag.hot = head;
+  head?.classList.add("hot");
+}
+
+function place() {
+  const isSpace = drag.el.classList.contains("space");
+  const under = document.elementFromPoint(innerWidth / 2, drag.y);
+  if (!under || under === drag.ph) return;
+  if (isSpace) {
+    const sec = under.closest(".space");
+    if (!sec || sec === drag.el) return;
+    const r = sec.getBoundingClientRect();
+    drag.y < r.top + r.height / 2 ? sec.before(drag.ph) : sec.after(drag.ph);
+    return;
+  }
+  const sec = under.closest(".space");
+  // Other is Seance's leftovers, not a place: rows can't be dropped there.
+  if (!sec || (sec.dataset.id === "_other" && drag.from !== "_other")) return;
+  const row = under.closest(".space .row");
+  if (row && row !== drag.el) {
+    setHot(null);
+    const r = row.getBoundingClientRect();
+    drag.y < r.top + r.height / 2 ? row.before(drag.ph) : row.after(drag.ph);
+  } else if (under.closest(".shead") || !sec.querySelector(".row:not(.dragging)")) {
+    // Over a header or an empty space: drop at its end. A collapsed one stays
+    // shut; its header lights up instead.
+    sec.querySelector(".rows").append(drag.ph);
+    setHot(sec.classList.contains("collapsed") ? sec.querySelector(".shead") : null);
+  }
+}
+
+function autoScroll() {
+  if (!drag.el) return;
+  const sc = $("scroll"), r = sc.getBoundingClientRect();
+  const edge = 70;
+  const v = drag.y < r.top + edge ? -(r.top + edge - drag.y) / 4 : drag.y > r.bottom - edge ? (drag.y - (r.bottom - edge)) / 4 : 0;
+  if (v) { sc.scrollTop += v; place(); }
+  requestAnimationFrame(autoScroll);
+}
+
+function finishDrag() {
+  removeEventListener("pointermove", onDrag);
+  removeEventListener("pointerup", endDrag);
+  removeEventListener("pointercancel", cancelDrag);
+  const el = drag.el;
+  el.classList.remove("dragging");
+  el.style.top = el.style.height = "";
+  if (el.classList.contains("space") && !drag.wasCollapsed) el.classList.remove("collapsed");
+  setHot(null);
+  drag.el = null;
+  drag.justDropped = true;
+  setTimeout(() => { drag.justDropped = false; }, 300);  // swallow the click that ends a drag
+  return el;
+}
+
+// The system took the gesture (shade, app switch, call): put it back, save nothing.
+function cancelDrag(e) {
+  if (!drag.el || e.pointerId !== drag.pid) return;
+  const el = finishDrag();
+  drag.ph.remove();
+  drag.home.parent.insertBefore(el, drag.home.next);
+  if (drag.stale) { drag.stale = false; renderList(); }
+}
+
+async function endDrag(e) {
+  if (!drag.el || e.pointerId !== drag.pid) return;
+  const el = finishDrag();
+  drag.ph.replaceWith(el);
+  const to = el.closest(".space")?.dataset.id;
+  const body = { spaces: [], circles: {}, move: null };
+  for (const sec of $("list").querySelectorAll(".space")) {
+    body.spaces.push(sec.dataset.id);
+    body.circles[sec.dataset.id] = [...sec.querySelectorAll(".row")].map(r => r.dataset.ws);
+  }
+  if (el.classList.contains("row") && to !== drag.from && to !== "_other") {
+    body.move = { ws: el.dataset.ws, space: to };
+    if (collapsed.has(to)) toast("Moved to " + el.closest(".space").querySelector(".sname").textContent);
+  }
+  try { await api("/api/arrange", body); }
+  catch (err) { alert("Couldn't save the new order: " + err.message); }
+  drag.stale = false;
+  loadList().catch(offline);
+}
+
+function toast(text) {
+  const t = $("toast");
+  t.textContent = text;
+  t.classList.add("show");
+  clearTimeout(toast.t);
+  toast.t = setTimeout(() => t.classList.remove("show"), 1800);
+}
+
+function setBadge(n) {
+  if (navigator.setAppBadge) (n ? navigator.setAppBadge(n) : navigator.clearAppBadge()).catch(() => {});
+}
+
+async function loadList() {
+  const d = await api("/api/circles");
+  state.circles = d.circles;
+  state.spaces = d.spaces || [];
+  showAfk(d.afk);
+  for (const c of d.circles) { state.names[c.ws] = c.name; state.seeds[c.ws] = c.seed || c.ws; }
+  if (state.ws) showSprite();
+  if (!state.ws) renderList();
+  else $("title").textContent = state.names[state.ws] || state.ws;
+}
+
+// ── thread ──
+const STATUS = { sending: "", got: "", answered: "", failed: "Not delivered" };  // the ticks say the rest
+
+function renderThread() {
+  const el = $("thread"), sc = $("scroll");
+  const atBottom = sc.scrollHeight - sc.scrollTop - sc.clientHeight < 80;
+  el.replaceChildren();
+  let lastDay = "";
+  const mine = state.msgs.filter(m => m.from === "me");
+  const latestMine = mine[mine.length - 1];
+  for (const m of state.msgs) {
+    const day = new Date(m.ts).toDateString();
+    if (day !== lastDay) {
+      lastDay = day;
+      const d = document.createElement("div");
+      d.className = "day";
+      d.textContent = new Date(m.ts).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+      el.append(d);
+    }
+    const b = document.createElement("div");
+    b.className = "msg " + m.from;
+    b.dataset.id = m.id;
+    // A lead's note can carry several pictures ("images"); "image" alone is the first.
+    for (const f of m.images || (m.image ? [m.image] : [])) {
+      if (isVideo(f)) {
+        const v = document.createElement("video");
+        v.src = "/api/file/" + f; v.controls = true; v.preload = "metadata"; v.playsInline = true;
+        v.onloadedmetadata = () => { if (pinned) $("scroll").scrollTop = $("scroll").scrollHeight; };
+        b.append(v);
+        continue;
+      }
+      const a = document.createElement("a");
+      a.href = "/api/file/" + f; a.target = "_blank"; a.rel = "noopener";
+      const img = document.createElement("img");
+      img.src = a.href; img.alt = "Photo";
+      // A late-loading picture would otherwise leave the thread short of the bottom.
+      img.onload = () => { if (pinned) $("scroll").scrollTop = $("scroll").scrollHeight; };
+      a.onclick = e => { e.preventDefault(); openViewer(a.href); };
+      a.append(img); b.append(a);
+    }
+    if (m.attachment) {
+      const a = document.createElement("a");
+      a.className = "file"; a.textContent = "\u{1F4CE} " + m.attachment.title;
+      a.href = "/api/file/" + m.attachment.file + "?name=" + encodeURIComponent(m.attachment.title);
+      b.append(a);
+    }
+    let shown = m.text;
+    if (m.spec && m.from !== "me") {
+      const head = document.createElement("div");
+      head.className = "spec-head";
+      const tag = document.createElement("small");
+      tag.textContent = "Spec";
+      head.append(tag, m.spec);
+      b.classList.add("spec");
+      b.append(head);
+      shown = m.text.split("\n").slice(1).join("\n").trim();
+    }
+    if (shown && !(m.attachment && m.text === "\u{1F4CE} " + m.attachment.title)) linkify(b, shown);
+    el.append(b);
+    // A lead's question with answers to tap (choice: lines); a tap sends that answer as your message.
+    if (m.choices && m.from !== "me") {
+      const row = document.createElement("div");
+      row.className = "choices";
+      m.choices.forEach((c, i) => {
+        const btn = document.createElement("button");
+        btn.textContent = c;
+        btn.className = m.picked === c ? "picked" : (i === 0 && !m.picked ? "first" : "");
+        btn.disabled = !!m.picked;
+        btn.onclick = async () => {
+          // Change is your own words, not a canned answer: Go stays tappable until you decide.
+          if (m.spec && c === "Change") { $("text").focus(); return; }
+          for (const x of row.children) x.disabled = true;
+          btn.className = "picked";
+          try {
+            const d = await api("/api/send", { ws: state.ws, text: c, answers: m.id });
+            if (!state.msgs.some(x => x.id === d.message.id)) state.msgs.push(d.message);
+            m.picked = c; state.jump = true; renderThread();
+          } catch (err) { toast("Not sent: " + err.message); for (const x of row.children) x.disabled = false; btn.className = ""; }
+        };
+        row.append(btn);
+      });
+      el.append(row);
+    }
+    const meta = document.createElement("div");
+    meta.className = "meta " + m.from;
+    let s = when(m.ts);
+    if (m.from === "me" && (m === latestMine || m.status === "failed") && (STATUS[m.status] || m.mode === "now" && m.status === "got"))
+      s += " · " + (m.status === "got" && m.mode === "now" ? "Lead interrupted" : STATUS[m.status]);
+    if (m.status === "failed") meta.classList.add("bad");
+    meta.textContent = s;
+    // Ticks: gray ✓ sent and waiting, colored ✓✓ once the lead has seen it (started
+    // it), and on a lead's message colored ✓✓ once you have read it.
+    const tick = m.from === "me" ? { sending: 1, got: 2, answered: 3 }[m.status] : m.from === "lead" && m.id <= state.readId ? 3 : 0;
+    if (tick) {
+      const k = document.createElement("span");
+      k.className = "ticks" + (tick >= 2 ? " seen" : "");
+      k.textContent = tick === 1 ? "✓" : "✓✓";
+      k.title = ["", "Waiting for the lead", "The lead has seen it", m.from === "me" ? "Answered" : "Seen"][tick];
+      meta.append(" ", k);
+    }
+    // A note waiting on a busy lead can jump the line: interrupt its turn.
+    if (m === latestMine && m.status === "got" && m.mode === "note") {
+      const now = document.createElement("button");
+      now.className = "now";
+      now.textContent = "Send now";
+      now.onclick = async () => {
+        now.disabled = true; now.textContent = "Interrupting…";
+        try { await api("/api/now", { id: m.id }); }
+        catch (err) { alert(err.message); now.disabled = false; now.textContent = "Send now"; }
+      };
+      meta.append(" · ", now);
+    }
+    const more = document.createElement("button");
+    more.className = "more"; more.textContent = "···"; more.ariaLabel = "More";
+    more.onclick = () => msgActions(m);
+    meta.append(" ", more);
+    el.append(meta);
+  }
+  if (latestMine && latestMine.status === "got") {
+    const w = document.createElement("div");
+    w.className = "working";
+    w.innerHTML = "Lead is working <span>●</span><span>●</span><span>●</span>";
+    el.append(w);
+  }
+  if (!state.msgs.length) el.innerHTML = state.ws === "alerts"
+    ? '<div class="empty">Alerts and Catch me up summaries show up here.</div>'
+    : '<div class="empty">Send a message and this circle\'s lead gets it as a task. The answer comes back here.</div>';
+  if (atBottom || state.jump) { sc.scrollTop = sc.scrollHeight; state.jump = false; }
+  // Opened from a search result: land on that message.
+  const hit = state.find && el.querySelector(`.msg[data-id="${state.find}"]`);
+  if (hit) { state.find = null; hit.scrollIntoView({ block: "center" }); hit.classList.add("flash"); }
+}
+
+async function loadThread() {
+  const ws = state.ws;
+  const d = await api("/api/thread?ws=" + encodeURIComponent(ws));
+  showAfk(d.afk);
+  if (ws !== state.ws) return;
+  showUsage(d.usage, d.context);
+  state.working = d.working; state.crew = state.crewDemo || d.crew;
+  showSprite();
+  showTodo(d.tasks);
+  if (state.leadBusy !== !!d.lead_busy) { state.leadBusy = !!d.lead_busy; showQuick(); }
+  // New messages in other circles show on the back button.
+  $("others").textContent = d.others || "";
+  $("others").classList.toggle("hidden", !d.others);
+  state.msgs = d.messages;
+  showPrs(d.prs || []);
+  state.readId = d.read;
+  // Only redraw when something in this thread changed, so a bump from
+  // another circle doesn't clear a text selection mid-copy.
+  const sig = JSON.stringify([d.read, d.messages.map(m => [m.id, m.status, m.mode, m.picked])]);
+  if (sig !== state.sig) { state.sig = sig; renderThread(); }
+  const last = state.msgs[state.msgs.length - 1];
+  if (last && last.id > d.read && document.visibilityState === "visible")
+    api("/api/read", { ws, id: last.id }).then(r => setBadge(r.unread)).catch(() => {});
+  clearNotifications(ws);
+}
+
+// One thread's notifications, or with no ws every one (opening Invoke clears them;
+// the unread counts on the circles still show what's new).
+async function clearNotifications(ws) {
+  const reg = await navigator.serviceWorker?.getRegistration();
+  // The service worker keeps one notification listing every chat with news; it drops this one's line.
+  reg?.active?.postMessage({ type: "read", ws: ws || null });
+}
+
+// On the circle list Seance's flame flickers while its smoke, the genie, drifts and
+// morphs, a pixel at a time, from shape to shape.
+// The smoke from the flame's tip up to a head moved dx, dy cells off its home, bending as it goes.
+function genieWisp(dx, dy, t) {
+  const rows = 3 - dy;
+  let d = "";
+  for (let j = 0; j <= rows; j++) {
+    const f = j / rows, x = 114 + dx * GENIE_CELL * f + GENIE_CELL * (sin(j * 1.4 + t * 2.5) - Math.sign(dx)) * sin(f * PI);
+    d += `M${2 + GENIE_CELL * Math.round((x - 2) / GENIE_CELL)} ${140 - j * GENIE_CELL}h28v14h-28z`;
+  }
+  return d;
+}
+const GENIE_SHAPES = [
+  ["..........", "..#....#..", "..######..", "..#.##.#..", "..#.##.#..", "...####..."],  // the genie
+  ["..........", "..........", "..........", "....##....", "...####...", "....##...."],  // a puff
+].map(rows => rows.join(""));
+// Otherwise it takes the top of a circle's own creature: the same 10 columns, eyes as holes.
+const genieTop = seed => sprite(seed).cells.slice(0, 6).flat().map(c => c === 1 ? "#" : ".").join("");
+function genieNext(now) {
+  const pool = [...new Set([...GENIE_SHAPES, ...Object.values(state.seeds).map(genieTop)])].filter(s => s !== now);
+  return pool[floor(Math.random() * pool.length)];
+}
+const GENIE_W = 10, GENIE_CELL = 14;
+let genieTimer = 0;
+async function lampUp(el) {
+  clearInterval(genieTimer);
+  if (CREW_STILL) return;
+  const svg = await fetch("/logo.svg").then(r => r.text()).catch(() => "");
+  if (!svg || el.dataset.seed !== "logo") return;
+  el.innerHTML = svg;
+  const top = el.firstElementChild, wisp = top.querySelector("path");
+  top.setAttribute("width", 30); top.setAttribute("height", 30);
+  wisp.setAttribute("d", genieWisp(0, 0, 0));
+  const NS = "http://www.w3.org/2000/svg", cells = [], head = document.createElementNS(NS, "g");
+  top.style.overflow = "visible"; top.prepend(head);
+  let shape = GENIE_SHAPES[0], hold = 0, at = "0,0";
+  for (let i = 0; i < shape.length; i++) {
+    const c = document.createElementNS(NS, "rect");
+    c.setAttribute("x", 58 + i % GENIE_W * GENIE_CELL); c.setAttribute("y", 14 + floor(i / GENIE_W) * GENIE_CELL);
+    c.setAttribute("width", GENIE_CELL); c.setAttribute("height", GENIE_CELL); c.setAttribute("fill", wisp.getAttribute("fill"));
+    c.style.display = shape[i] === "#" ? "" : "none";
+    head.append(c); cells.push(c);
+  }
+  const fromFlame = i => Math.hypot(i % GENIE_W - 4.5, floor(i / GENIE_W) - 6);
+  genieTimer = setInterval(() => {
+    if (el.dataset.seed !== "logo" || !el.contains(top)) { clearInterval(genieTimer); return; }
+    const t = performance.now() / 1000, dx = Math.round(1.7 * sin(t * 1.3)), dy = Math.round(sin(t * .8) + .5 * sin(t * 2));
+    if (at !== dx + "," + dy) {  // it drifts over the flame, a cell at a time
+      at = dx + "," + dy;
+      head.setAttribute("transform", `translate(${dx * GENIE_CELL} ${dy * GENIE_CELL})`);
+    }
+    wisp.setAttribute("d", genieWisp(dx, dy, t));  // and the smoke always curls
+    const off = i => cells[i].style.display === "none";
+    const todo = [...cells.keys()].filter(i => off(i) === (shape[i] === "#"));
+    if (!todo.length) {
+      if (++hold > 40) { hold = 0; shape = genieNext(shape); }
+      return;
+    }
+    // Pixels leave from the far edge and arrive from the flame, so it grows up out of the fire.
+    const rank = i => (off(i) ? fromFlame(i) : 12 - fromFlame(i)) + Math.random() * 2;
+    const order = todo.map(i => [rank(i), i]).sort((a, b) => a[0] - b[0]);
+    for (const [, i] of order.slice(0, 3)) cells[i].style.display = off(i) ? "" : "none";
+  }, 70);
+}
+
+// The open circle's character beside its title, dancing while the circle works.
+function showSprite() {
+  const el = $("tsprite"), seed = state.ws && state.ws !== "alerts" && state.seeds[state.ws];
+  if (!state.ws) {  // the circle list wears Invoke's own flame
+    if (el.dataset.seed !== "logo") { el.innerHTML = '<img src="/logo.svg" alt="">'; el.dataset.seed = "logo"; lampUp(el); }
+    el.classList.remove("dance", "crew"); el.style.width = "";
+    return;
+  }
+  if (!seed) { el.replaceChildren(); el.dataset.seed = ""; el.classList.remove("crew"); el.style.width = ""; return; }
+  const crew = (state.crew || []).slice(0, CREW_MAX), many = crew.length > 1;
+  const key = seed + (many ? ":" + crew.join() : "");
+  if (el.dataset.seed !== key || !el.firstChild) {
+    const r = Math.max(15, 4.2 * crew.length);
+    el.innerHTML = many ? crewHtml(seed, crew, r, "top:" + state.ws) : spriteSvg(seed);
+    el.style.width = many ? 2 * r + 24 + "px" : "";
+    el.dataset.seed = key;
+  }
+  el.classList.toggle("crew", many);
+  if (many) crewStart();
+  el.classList.toggle("dance", !!state.working && !many);
+}
+
+// ── Claude plan usage (USAGE_FILE), above the open thread ──
+const RESET_ICON = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 4v5h-5"/></svg>';
+function showUsage(u, context) {
+  const el = $("usage");
+  el.classList.toggle("hidden", !u && context == null);
+  if (!u && context == null) return;
+  u = u || {};
+  const part = (label, r, fmt) => {
+    if (!r) return "";
+    // A refresh arrow stands for "resets".
+    const reset = r.resets ? ` · <span class="rs" aria-label="resets">${RESET_ICON}</span>` + new Date(r.resets).toLocaleString([], fmt) : "";
+    return `<span class="${r.used >= 80 ? "hot" : ""}">${label} <b>${r.used}%</b>${reset}</span>`;
+  };
+  el.innerHTML = part("5h", u.five_hour, { hour: "numeric", minute: "2-digit" })
+    + part("7d", u.seven_day, { weekday: "short", hour: "numeric" })
+    + (context == null ? "" : `<span class="${context >= 50 ? "high" : context >= 30 ? "warm" : ""}">ctx <b>${context}%</b>`
+      + (context >= 50 ? '<button id="compact">Compact</button>' : "") + "</span>");
+  const c = $("compact");
+  if (c) c.onclick = () => sendText("/compact");
+}
+
+// ── AFK (afk): you are away from the Mac, leads text you here ──
+function showAfk(a) {
+  if (!a) return;
+  state.afk = a;
+  const b = $("afk");
+  b.classList.remove("hidden");
+  b.classList.toggle("on", a.on);
+  b.textContent = a.on ? "✓ AFK" : "AFK";
+  b.title = a.on ? "AFK since " + when(a.since) + (a.mac ? ", Mac kept awake" : ", Mac will sleep with its lid closed") : "";
+}
+$("afk").onclick = async () => {
+  const on = !state.afk?.on;
+  if (!confirm(on ? "Turn AFK on? The Mac stays awake with its lid closed and leads text you here."
+                  : "Turn AFK off? The Mac sleeps with its lid closed again.")) return;
+  const b = $("afk");
+  b.disabled = true; b.textContent = on ? "Turning on…" : "Turning off…";
+  try { toast((await api("/api/afk", { on })).said); }
+  catch (err) { alert(err.message); }
+  b.disabled = false;
+  (state.ws ? loadThread() : loadList()).catch(offline);
+};
+
+// ── routing ──
+function route() {
+  if (location.hash === "#/share") { openShare().catch(err => toast("Couldn't open the share: " + err.message)); return; }
+  if (state.ws) state.drafts[state.ws] = ta.value;
+  const m = location.hash.match(/^#\/c\/([^?]+)(?:\?(draft|m|crew)=(.*))?$/);
+  state.ws = m ? decodeURIComponent(m[1]) : null;
+  state.leadBusy = false;
+  state.crewDemo = null;
+  // A link from another page (the learning journal's Explore buttons) can pre-type a message.
+  // Drop it from the address so a reload or Back doesn't type it again.
+  if (m && m[2]) {
+    history.replaceState(null, "", "#/c/" + m[1]);
+    if (m[2] === "m") state.find = +m[3];
+    else if (m[2] === "crew") state.crewDemo = [...Array(Math.min(+m[3] || 0, CREW_MAX)).keys()];  // show a crew of that many
+    else try { state.drafts[state.ws] = decodeURIComponent(m[3]); } catch {}
+  }
+  ta.value = state.ws ? state.drafts[state.ws] || "" : "";
+  const inThread = !!state.ws;
+  $("back").classList.toggle("hidden", !inThread);
+  if (inThread) $("bell").classList.add("hidden");
+  $("todo").classList.add("hidden"); $("tasks").classList.add("hidden");
+  $("peek").classList.add("hidden"); $("acts").classList.add("hidden"); $("viewer").classList.add("hidden");
+  $("peekBtn").classList.toggle("hidden", !inThread || state.ws === "alerts");
+  if (!inThread) $("prsBtn").classList.add("hidden");
+  $("findBtn").classList.toggle("hidden", inThread);
+  $("searchBar").classList.toggle("hidden", inThread || !state.searching);
+  $("list").classList.toggle("hidden", inThread || !!state.searching);
+  $("thread").classList.toggle("hidden", !inThread);
+  if (!inThread) $("usage").classList.add("hidden");
+  state.working = false; state.crew = []; showSprite();
+  $("composer").classList.toggle("hidden", !inThread || state.ws === "alerts");
+  ta.dispatchEvent(new Event("input"));  // size a restored draft once visible
+  $("title").textContent = inThread ? (state.names[state.ws] || (state.ws === "alerts" ? "Alerts" : state.ws)) : "Invoke";
+  showNotifyButton();
+  if (inThread) {
+    state.msgs = []; state.sig = ""; state.jump = true; state.panes = []; $("thread").replaceChildren();
+    loadThread().catch(offline);
+    if (state.ws !== "alerts") loadPanes().catch(() => {});
+    if (!state.names[state.ws]) loadList().catch(() => {});
+  } else loadList().catch(offline);
+  $("scroll").scrollTop = 0;
+}
+// Opened straight into a thread (a notification): Back replaces, so Android
+// back from the list leaves the app instead of returning to the thread.
+$("back").onclick = () => { history.length > 1 ? history.back() : location.replace("#"); };
+window.addEventListener("hashchange", route);
+// Panes start and finish turns without a new message, so the open view rechecks who is working.
+setInterval(() => {
+  if (document.visibilityState !== "visible") return;
+  (state.ws ? loadThread() : loadList()).catch(() => {});
+  if (!$("tasks").classList.contains("hidden")) loadTasks().catch(() => {});
+}, 8000);
+
+// ── the lead's to-do list ──
+function showTodo(n) {
+  $("todo").classList.toggle("hidden", !state.ws || state.ws === "alerts");
+  $("todoCount").textContent = n || "";
+  $("todoCount").classList.toggle("hidden", !n);
+}
+function took(a, b) {
+  const m = Math.round(((b || Date.now()) - a) / 60000);
+  return m < 1 ? "under a minute" : m < 60 ? m + " min" : Math.floor(m / 60) + " h " + (m % 60) + " min";
+}
+function taskRow(t, kind, sub) {
+  const b = document.createElement("button");
+  b.className = "task " + kind;
+  b.innerHTML = '<span class="box"></span><span class="tx"><div class="what"></div><div class="sub"></div></span>';
+  // The lead names its task; your own words go under the name.
+  b.querySelector(".what").textContent = t.name || t.text || "(no text)";
+  const s = b.querySelector(".sub");
+  if (t.name && t.text) { const q = document.createElement("div"); q.className = "said"; q.textContent = (t.phone ? "You: " : "Asked: ") + t.text; s.before(q); }
+  if (sub) { const p = document.createElement("span"); p.className = "prog"; p.textContent = sub; s.append(p, document.createElement("br")); }
+  if (t.start) s.append((t.phone ? "From your phone · " : "From a pane · ") + (kind === "done"
+    ? (t.status === "orphaned" ? "dropped " : "done ") + when(t.end) + " · took " + took(t.start, t.end)
+    : kind === "now" ? "started " + when(t.start) + " · " + took(t.start) + " so far"
+    : (t.status === "parked" ? "parked" : "queued") + " · sent " + when(t.start)));
+  b.onclick = () => b.classList.toggle("open");
+  return b;
+}
+// Parked tasks rarely get closed by their lead; you swipe one left (or right) to close it.
+function swipeAway(row, id) {
+  let x0 = null, dx = 0;
+  row.addEventListener("pointerdown", e => { x0 = e.clientX; dx = 0; row.style.transition = "none"; });
+  row.addEventListener("pointermove", e => {
+    if (x0 === null) return;
+    dx = e.clientX - x0;
+    if (Math.abs(dx) > 8) { row.style.transform = `translateX(${dx}px)`; row.style.opacity = 1 - Math.min(Math.abs(dx) / 240, .7); }
+  });
+  const end = async () => {
+    if (x0 === null) return;
+    x0 = null; row.style.transition = "transform .2s, opacity .2s";
+    if (Math.abs(dx) < 100) { row.style.transform = ""; row.style.opacity = ""; return; }
+    row.style.transform = `translateX(${dx > 0 ? 120 : -120}%)`; row.style.opacity = 0;
+    try { await api("/api/dismiss", { ws: state.ws, id }); toast("Closed"); }
+    catch (err) { toast("Couldn't close it: " + err.message); }
+    loadTasks().catch(() => {}); loadThread().catch(() => {});
+  };
+  row.addEventListener("pointerup", end);
+  row.addEventListener("pointercancel", end);
+  // A swipe isn't a tap: don't expand the row after one.
+  row.addEventListener("click", e => { if (Math.abs(dx) > 8) e.stopImmediatePropagation(); }, true);
+  row.style.touchAction = "pan-y";
+  return row;
+}
+// A parked task can go back to the lead: "Work on this" sends it again as a message from you.
+function resumable(row, id) {
+  const b = document.createElement("span");
+  b.className = "resume"; b.role = "button"; b.ariaLabel = b.title = "Work on this";
+  b.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 6l-6 6 6 6"/></svg>';
+  b.onclick = async e => {
+    e.stopPropagation();
+    b.classList.add("busy");
+    try { await api("/api/resume", { ws: state.ws, id }); toast("Sent to the lead"); }
+    catch (err) { toast("Couldn't send it: " + err.message); }
+    loadTasks().catch(() => {}); loadThread().catch(() => {});
+  };
+  row.append(b);
+  return row;
+}
+async function loadTasks() {
+  const ws = state.ws, d = await api("/api/tasks?ws=" + encodeURIComponent(ws));
+  if (ws !== state.ws) return;
+  const open = new Set([...$("taskBody").querySelectorAll(".task.open .what")].map(e => e.textContent));
+  const body = document.createElement("div");
+  const h = document.createElement("h2");
+  h.textContent = d.lead ? "Lead's tasks" : "No lead in this circle";
+  body.append(h);
+  const sec = (title, rows) => {
+    const t = document.createElement("h3"); t.textContent = title; body.append(t);
+    if (!rows.length) { const n = document.createElement("div"); n.className = "none"; n.textContent = "Nothing"; body.append(n); }
+    for (const r of rows) body.append(r);
+  };
+  if (d.lead) {
+    // Progress is what the lead's pane shows right now (Claude's spinner line), minus the spinner glyph.
+    const spin = x => x ? x.replace(/^\S+\s+/, "") : "Working";
+    const doing = d.busy ? spin(d.doing) : "Waiting for its next turn";
+    // Busy with no task open: you typed into the pane yourself.
+    sec("Now", d.now.length ? d.now.map(t => taskRow(t, "now", doing))
+      : d.busy ? [taskRow({ text: "Something typed into the pane" }, "now", doing)] : []);
+    // In progress: other panes in the circle at work, and the lead's own background agents (reviews).
+    const out = [...d.helpers.map(x => taskRow({ name: x.task && x.name, text: x.task || x.name }, "now", spin(x.doing))),
+                 ...(d.agents || []).map(a => taskRow({ name: a.name, text: a.doing }, "now", "Background agent · running " + a.for))];
+    if (out.length) sec("In progress", out);
+    sec("Up next", d.waiting.map(t => taskRow(t, "wait")));
+    if (d.parked.length) sec("Parked · swipe to close", d.parked.map(t => swipeAway(resumable(taskRow(t, "wait"), t.id), t.id)));
+    sec("Done lately", d.done.map(t => taskRow(t, "done")));
+  }
+  for (const w of body.querySelectorAll(".what")) if (open.has(w.textContent)) w.closest(".task").classList.add("open");
+  $("taskBody").replaceWith(body); body.id = "taskBody";
+}
+$("todo").onclick = () => { $("taskBody").replaceChildren(); $("tasks").classList.remove("hidden"); loadTasks().catch(offline); };
+$("tasks").onclick = e => { if (e.target === $("tasks")) $("tasks").classList.add("hidden"); };
+// Pull the sheet down to close it, from the top of its list.
+{
+  const sheet = $("tasks").querySelector(".sheet");
+  let y0 = null, dy = 0;
+  sheet.addEventListener("touchstart", e => {
+    y0 = sheet.scrollTop <= 0 ? e.touches[0].clientY : null; dy = 0; sheet.style.transition = "none";
+  }, { passive: true });
+  sheet.addEventListener("touchmove", e => {
+    if (y0 === null) return;
+    dy = e.touches[0].clientY - y0;
+    if (dy > 0) { e.preventDefault(); sheet.style.transform = `translateY(${dy}px)`; }
+  }, { passive: false });
+  sheet.addEventListener("touchend", () => {
+    if (y0 === null) return;
+    y0 = null; sheet.style.transition = "transform .2s";
+    if (dy > 100) {
+      sheet.style.transform = "translateY(100%)";
+      setTimeout(() => { $("tasks").classList.add("hidden"); sheet.style.transform = ""; }, 200);
+    } else sheet.style.transform = "";
+  });
+}
+
+// ── composer ──
+const ta = $("text");
+// Keep the keyboard up on Send: the button never takes focus.
+for (const ev of ["pointerdown", "mousedown"]) $("sendBtn").addEventListener(ev, e => e.preventDefault());
+// The keyboard shrinks the thread; stay pinned to the newest message.
+let pinned = true;
+$("scroll").addEventListener("scroll", () => {
+  const sc = $("scroll");
+  pinned = sc.scrollHeight - sc.scrollTop - sc.clientHeight < 80;
+});
+new ResizeObserver(() => { if (pinned && state.ws) $("scroll").scrollTop = $("scroll").scrollHeight; }).observe($("scroll"));
+ta.addEventListener("input", () => {
+  ta.style.height = "auto";
+  ta.style.height = ta.scrollHeight + 2 + "px";
+  $("sendBtn").disabled = !ta.value.trim();
+  showQuick();
+});
+$("composer").addEventListener("submit", async e => {
+  e.preventDefault();
+  const text = ta.value.trim();
+  if (!text) return;
+  ta.value = ""; state.drafts[state.ws] = ""; ta.dispatchEvent(new Event("input")); ta.focus();
+  try {
+    const d = await api("/api/send", { ws: state.ws, text });
+    if (!state.msgs.some(m => m.id === d.message.id)) state.msgs.push(d.message);
+    state.jump = true; renderThread();
+  } catch (err) {
+    ta.value = text; ta.dispatchEvent(new Event("input"));
+    alert("Not sent: " + err.message);
+  }
+});
+
+// ── photos: shrunk on the phone (a camera shot is ~5 MB) and posted as raw bytes ──
+async function shrink(file, max = 1600) {
+  if (file.type === "image/gif") return file;
+  // Android Chrome can't decode HEIC; the camera app's default is JPEG anyway.
+  if (/hei[cf]/i.test(file.type)) throw new Error("HEIC photos aren't supported; pick a JPEG or PNG");
+  const bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
+  const k = Math.min(1, max / Math.max(bmp.width, bmp.height));
+  const c = document.createElement("canvas");
+  c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+  c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
+  const blob = await new Promise(r => c.toBlob(r, "image/jpeg", 0.85));
+  if (!blob) throw new Error("couldn't shrink that photo");
+  return blob;
+}
+const isVideo = name => /\.(mp4|webm|mov)$/i.test(name);
+const DOCS = /\.(pdf|csv|tsv|txt|md|json|docx?|xlsx?|pptx?|key|numbers|pages|zip)$/i;
+async function sendDoc(ws, file, text) {
+  if (!DOCS.test(file.name)) throw new Error("that file type isn't supported");
+  if (file.size > 50 * 1024 * 1024) throw new Error("that file is over 50 MB");
+  const r = await fetch("/api/image?ws=" + encodeURIComponent(ws) + "&text=" + encodeURIComponent(text) + "&name=" + encodeURIComponent(file.name),
+    { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: file });
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.status);
+  return r.json();
+}
+// Photos are shrunk; videos go as they are (up to 200 MB).
+async function sendMedia(ws, file, text) {
+  if (file.type.startsWith("video/") && file.size > 200 * 1024 * 1024)
+    throw new Error("that video is over 200 MB");
+  const blob = file.type.startsWith("video/") ? file : await shrink(file);
+  if (blob.type.startsWith("video/") && !/^video\/(mp4|webm|quicktime)$/.test(blob.type))
+    throw new Error("that video format isn't supported (MP4, WebM or MOV)");
+  const r = await fetch("/api/image?ws=" + encodeURIComponent(ws) + "&text=" + encodeURIComponent(text),
+    { method: "POST", headers: { "Content-Type": blob.type }, body: blob });
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.status);
+  return r.json();
+}
+
+// ── share sheet: Android's Share → Invoke lands on #/share with the file in the service worker's cache ──
+async function openShare() {
+  const c = await caches.open("invoke-shared");
+  const [fr, tr] = await Promise.all([c.match("/shared/file"), c.match("/shared/text")]);
+  const file = fr ? new File([await fr.blob()], "shared", { type: fr.headers.get("Content-Type") || "" }) : null;
+  const text = tr ? await tr.text() : "";
+  if (!file && !text) { location.replace("#"); return; }
+  const prev = $("sharePreview"); prev.replaceChildren();
+  if (file) {
+    const el = document.createElement(file.type.startsWith("video/") ? "video" : "img");
+    if (prev.dataset.url) URL.revokeObjectURL(prev.dataset.url);
+    el.src = prev.dataset.url = URL.createObjectURL(file);
+    if (el.tagName === "VIDEO") { el.muted = true; el.playsInline = true; el.controls = true; }
+    prev.append(el);
+  }
+  $("shareText").value = text;
+  if (!state.circles.length) await loadList();
+  const list = $("shareList"); list.replaceChildren();
+  // Busiest first: the order of the circle list's Active section, then the rest.
+  const rows = state.circles.filter(c => c.ws !== "alerts")
+    .sort((a, b) => (b.last?.ts || 0) - (a.last?.ts || 0));
+  for (const ci of rows) {
+    const b = document.createElement("button");
+    b.className = "row";
+    b.innerHTML = '<span class="avatar"></span><span class="name"></span>';
+    b.querySelector(".avatar").innerHTML = spriteSvg(state.seeds[ci.ws] || ci.ws);
+    b.querySelector(".name").textContent = ci.name;
+    b.onclick = async () => {
+      for (const x of list.querySelectorAll("button")) x.disabled = true;
+      b.querySelector(".name").textContent = ci.name + " · sending…";
+      const caption = $("shareText").value.trim();
+      try {
+        if (file) await sendMedia(ci.ws, file, caption);
+        else await api("/api/send", { ws: ci.ws, text: caption });
+        await c.delete("/shared/file"); await c.delete("/shared/text");
+        $("share").classList.add("hidden");
+        location.replace("#/c/" + encodeURIComponent(ci.ws));
+      } catch (err) {
+        toast("Not sent: " + err.message);
+        for (const x of list.querySelectorAll("button")) x.disabled = false;
+        b.querySelector(".name").textContent = ci.name;
+      }
+    };
+    list.append(b);
+  }
+  $("share").classList.remove("hidden");
+}
+$("share").onclick = e => {
+  if (e.target !== $("share")) return;
+  $("share").classList.add("hidden");
+  caches.open("invoke-shared").then(c => Promise.all([c.delete("/shared/file"), c.delete("/shared/text")]));
+  location.replace("#");
+};
+
+// Photos and Files, not the bare chooser. Files lists no image types: those make Android offer the camera.
+$("attachBtn").onclick = () => openActs("Send", [
+  ["Photos and videos", () => { closeActs(); $("pickPhoto").click(); }],
+  ["Files", () => { closeActs(); $("pick").click(); }],
+]);
+async function sendPicked(input) {
+  const files = [...input.files];
+  input.value = "";
+  if (!files.length) return;
+  const ws = state.ws, btn = $("attachBtn");
+  let text = ta.value.trim();
+  btn.disabled = true;
+  try {
+    for (const file of files) {
+      const d = await (/^(image|video)\//.test(file.type) ? sendMedia : sendDoc)(ws, file, text);
+      // The caption went with the first one: clear it, unless it was edited meanwhile.
+      if (state.drafts[ws] === text) state.drafts[ws] = "";
+      if (ws === state.ws) {
+        if (text && ta.value.trim() === text) { ta.value = ""; state.drafts[ws] = ""; ta.dispatchEvent(new Event("input")); }
+        if (!state.msgs.some(m => m.id === d.message.id)) state.msgs.push(d.message);
+        state.jump = true; renderThread();
+      }
+      text = "";
+    }
+  } catch (err) { alert("Not sent: " + err.message); }
+  btn.disabled = false;
+}
+$("pick").onchange = () => sendPicked($("pick"));
+$("pickPhoto").onchange = () => sendPicked($("pickPhoto"));
+
+// ── the creature easter egg: no sound, on purpose ──
+const LINES = ["Who summoned me?", "The spirits say: ship it.", "Knock once for yes.", "I saw nothing.", "Boo.",
+  "The flame burns low tonight.", "Your tokens are in another castle.", "I only dance when you're not looking.",
+  "Have you tried /compact?", "The veil is thin. So is the server's RAM."];
+let eggTaps = [], eggHide = 0;
+function eggSay(text) {
+  let b = $("egg");
+  if (!b) { b = document.createElement("div"); b.id = "egg"; document.body.append(b); }
+  const r = $("tsprite").getBoundingClientRect();
+  b.textContent = text; b.style.opacity = 1;
+  b.style.left = Math.max(8, r.left) + "px"; b.style.top = r.bottom + 6 + "px";
+  clearTimeout(eggHide);
+  eggHide = setTimeout(() => { b.style.opacity = 0; }, 2400);
+}
+function eggMove(svg, move) {
+  if (!svg || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  svg.dataset.move = 1;
+  svg.style.animation = move + " .9s ease-in-out 1";
+  svg.addEventListener("animationend", () => { delete svg.dataset.move; svg.style.animation = ""; }, { once: true });
+}
+// A full-screen party: the circles' creatures spin in and run through the crew's
+// moves at double time under falling confetti, then whirl away. A tap ends it.
+const PARTY_MS = 7000, PARTY_CREW = 8;
+function eggParty() {
+  eggSay("A seance party! The spirits are out.");
+  if (CREW_STILL || $("party")) return;
+  const home = state.seeds[state.ws] || "seance", { color } = sprite(home);
+  const seeds = [home, ...[...new Set(Object.values(state.seeds))].filter(s => s !== home).sort(() => Math.random() - .5)].slice(0, PARTY_CREW);
+  while (seeds.length < PARTY_CREW) seeds.push(home);
+  const scale = min(2.6, innerWidth / 150), r = min(60, innerWidth * .32 / scale);
+  const box = document.createElement("div");
+  box.id = "party"; box.style.setProperty("--s", scale);
+  box.innerHTML = `<span class="ring" data-r="${r}" data-key="party" data-fast="1">${seeds.map((s, i) =>
+    `<span class="cut">${spriteSvg(s, s === home ? crewShade(color, i) : "")}</span>`).join("")}</span>`;
+  crewDances.delete("party");
+  for (let i = 0; i < 140; i++) {
+    const c = document.createElement("i"), { color: tint } = sprite(seeds[i % seeds.length]);
+    c.className = "confetti";
+    c.style.background = i % 4 === 0 ? "#E9A03A" : i % 4 === 1 ? "#7c5cff" : tint;
+    c.style.left = Math.random() * 100 + "%";
+    c.style.setProperty("--dx", (Math.random() * 120 - 60) + "px");
+    c.style.setProperty("--d", 1.6 + Math.random() * 1.6 + "s");
+    c.style.animationDelay = Math.random() * 4.2 + "s";
+    box.append(c);
+  }
+  const end = setTimeout(() => box.remove(), PARTY_MS);
+  box.onclick = () => { clearTimeout(end); box.remove(); };
+  document.body.append(box);
+  crewStart();
+}
+$("tsprite").onclick = () => {
+  const now = Date.now(), svg = $("tsprite").querySelector("svg");
+  if (!svg || !state.ws) return;
+  eggTaps = [...eggTaps.filter(t => now - t < 3000), now];
+  eggMove(svg, MOVES[Math.floor(Math.random() * MOVES.length)]);
+  if (eggTaps.length >= 5) { eggTaps = []; eggParty(); }
+  else eggSay(LINES[Math.floor(Math.random() * LINES.length)]);
+};
+
+// ── quick replies and @helpers, above the composer ──
+const QUICK = ["Keep going", "Status?", "Ship it"];
+const STOP_SIGN = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M8 2.5h8L21.5 8v8L16 21.5H8L2.5 16V8z"/></svg>`;
+async function loadPanes() {
+  const ws = state.ws, d = await api("/api/panes?ws=" + encodeURIComponent(ws));
+  if (ws === state.ws) { state.panes = d.panes; showQuick(); }
+}
+function chip(label, fn) {
+  const b = document.createElement("button");
+  b.type = "button"; b.textContent = label; b.onclick = fn;
+  // Keep the keyboard up: the chip never takes focus.
+  for (const ev of ["pointerdown", "mousedown"]) b.addEventListener(ev, e => e.preventDefault());
+  return b;
+}
+function showQuick() {
+  const q = $("quick"), at = ta.value.match(/^@(\S*)$/), open = state.ws && state.ws !== "alerts";
+  const helpers = at ? (state.panes || []).filter(p => p.helper && p.at.toLowerCase().startsWith(at[1].toLowerCase())) : [];
+  const chips = helpers.length ? helpers.map(p => chip("@" + p.at, () => {
+    ta.value = "@" + p.at + " "; ta.dispatchEvent(new Event("input")); ta.focus();
+  })) : ta.value.trim() ? [] : QUICK.map(t => chip(t, () => sendText(t)));
+  if (open && state.leadBusy && !helpers.length) {  // stays up while you type: Stop is never out of reach
+    const b = chip("", () => stop(""));
+    b.className = "stopchip"; b.ariaLabel = "Stop the lead";
+    b.insertAdjacentHTML("afterbegin", STOP_SIGN);
+    chips.push(b);
+  }
+  q.replaceChildren(...chips);
+  q.classList.toggle("hidden", !open || !chips.length);
+}
+async function sendText(text) {
+  if (state.sendingQuick) return;  // a double tap sends once
+  state.sendingQuick = true;
+  try {
+    const d = await api("/api/send", { ws: state.ws, text });
+    if (!state.msgs.some(m => m.id === d.message.id)) state.msgs.push(d.message);
+    state.jump = true; renderThread();
+  } catch (err) { toast("Not sent: " + err.message); }
+  setTimeout(() => { state.sendingQuick = false; }, 600);
+}
+
+// ── Peek: a pane's screen, read-only, refreshed while the sheet is open ──
+function peekOpen() { return !$("peek").classList.contains("hidden"); }
+async function loadPeek() {
+  const ws = state.ws, slug = state.peekPane, pre = $("peekText");
+  const d = await api("/api/peek?ws=" + encodeURIComponent(ws) + "&pane=" + encodeURIComponent(slug));
+  if (ws !== state.ws || slug !== state.peekPane || !peekOpen()) return;
+  const stuck = pre.scrollHeight - pre.scrollTop - pre.clientHeight < 40;
+  if (d.text !== pre.dataset.text) {
+    pre.dataset.text = d.text;
+    pre.textContent = d.text.replace(/\s+$/, "") || "(nothing on screen)";
+    if (stuck) pre.scrollTop = pre.scrollHeight;
+  }
+  $("peekStop").classList.toggle("hidden", !d.busy);
+  $("peekStop").textContent = "Stop " + d.name;
+  $("peekStop").dataset.pane = slug;
+}
+function peekTabs() {
+  $("peekTabs").replaceChildren(...state.panes.map(p => {
+    const b = document.createElement("button");
+    b.textContent = p.at + (p.busy ? " •" : "");
+    b.className = p.slug === state.peekPane ? "on" : "";
+    b.onclick = () => {
+      state.peekPane = p.slug; peekTabs();
+      // The old pane's Stop mustn't stay up over the new pane's name.
+      $("peekStop").classList.add("hidden");
+      $("peekText").dataset.text = ""; $("peekText").textContent = "Reading…";
+      loadPeek().catch(() => {});
+    };
+    return b;
+  }));
+}
+// ── a circle's open PRs: a chip in the header, a list on tap ──
+const prState = pr => /FAILURE|ERROR/.test(pr.checks) ? "bad" : pr.checks === "SUCCESS" ? "good" : pr.checks ? "busy" : "";
+const PR_CHECKS = { bad: "checks failing", good: "checks passed", busy: "checks running", "": "no checks" };
+const PR_REVIEW = { APPROVED: "approved", CHANGES_REQUESTED: "changes requested", REVIEW_REQUIRED: "needs review" };
+const prDot = kind => { const d = document.createElement("i"); d.className = "dot " + kind; return d; };
+function showPrs(prs) {
+  state.prs = prs;
+  const chip = $("prsBtn"), kinds = prs.map(prState);
+  chip.classList.toggle("hidden", !prs.length);
+  if (!prs.length) return;
+  const worst = ["bad", "busy", "good"].find(k => kinds.includes(k)) || "";
+  chip.replaceChildren(prDot(worst), prs.length + (prs.length === 1 ? " PR" : " PRs"));
+}
+$("prsBtn").onclick = () => {
+  const order = { bad: 0, busy: 1, "": 2, good: 3 };
+  const rows = [...state.prs].sort((a, b) => order[prState(a)] - order[prState(b)]).map(pr => {
+    const a = document.createElement("a");
+    a.className = "prrow"; a.href = pr.url; a.target = "_blank"; a.rel = "noopener";
+    const name = document.createElement("span");
+    name.textContent = pr.title;
+    const sub = document.createElement("small");
+    sub.textContent = [pr.repo.split("/")[1], pr.draft ? "draft" : PR_REVIEW[pr.review], PR_CHECKS[prState(pr)]].filter(Boolean).join(" · ");
+    const words = document.createElement("div");
+    words.append(name, sub);
+    a.append(prDot(prState(pr)), words);
+    return a;
+  });
+  const list = document.createElement("div");
+  list.append(...rows);
+  openActs(state.ws === "alerts" ? "Unfiled PRs" : "Open PRs", [], list);
+};
+$("peekBtn").onclick = async () => {
+  await loadPanes().catch(() => {});
+  if (!state.panes?.length) { toast("No live panes in this circle"); return; }
+  state.peekPane = state.panes[0].slug;
+  $("peekText").dataset.text = ""; $("peekText").textContent = "Reading…";
+  $("peekStop").classList.add("hidden");
+  $("peek").classList.remove("hidden");
+  peekTabs();
+  loadPeek().catch(err => { $("peekText").textContent = "Couldn't read it: " + err.message; });
+};
+$("peek").onclick = e => { if (e.target === $("peek")) $("peek").classList.add("hidden"); };
+setInterval(() => {
+  if (peekOpen() && document.visibilityState === "visible") loadPeek().catch(() => {});
+}, 2000);
+async function stop(pane) {
+  try { await api("/api/stop", { ws: state.ws, pane }); toast("Stopped"); }
+  catch (err) { toast(err.message); }
+  loadThread().catch(() => {});
+}
+$("peekStop").onclick = () => stop($("peekStop").dataset.pane);
+
+// ── actions on a message: forward, remind, copy, mark unread ──
+function openActs(title, items, extra) {
+  const body = $("actsBody");
+  const h = document.createElement("h2");
+  h.textContent = title;
+  body.replaceChildren(h, ...items.map(([label, fn]) => {
+    const b = document.createElement("button");
+    b.className = "item"; b.textContent = label; b.onclick = fn;
+    return b;
+  }));
+  if (extra) body.append(extra);
+  $("acts").classList.remove("hidden");
+}
+$("acts").onclick = e => { if (e.target === $("acts")) $("acts").classList.add("hidden"); };
+const closeActs = () => $("acts").classList.add("hidden");
+function msgActions(m) {
+  const items = [
+    ["Forward to another circle", () => forwardTo(m)],
+    ["Remind me later", () => remindAt(m, false)],
+  ];
+  if (m.ws !== "alerts") items.push(["Have the lead pick this up later", () => remindAt(m, true)]);
+  if (m.text) items.push(["Copy text", async () => {
+    closeActs();
+    try { await navigator.clipboard.writeText(m.text); toast("Copied"); } catch { toast("Couldn't copy"); }
+  }]);
+  items.push(["Mark this circle unread", () => { closeActs(); markUnread(state.ws, true); }]);
+  openActs("Message", items);
+}
+async function markUnread(ws, leave) {
+  // Leave first: an open thread marks itself read again.
+  if (leave) await new Promise(done => {
+    window.addEventListener("hashchange", done, { once: true });
+    setTimeout(done, 400);
+    $("back").onclick();
+  });
+  try { await api("/api/unread", { ws }); toast("Marked unread"); }
+  catch (err) { toast("Couldn't: " + err.message); }
+  loadList().catch(() => {});
+}
+async function forwardTo(m) {
+  if (!state.circles.length) await loadList();
+  const rows = state.circles.filter(c => c.ws !== "alerts" && c.ws !== m.ws)
+    .sort((a, b) => (b.last?.ts || 0) - (a.last?.ts || 0));
+  openActs("Forward to…", rows.map(c => [c.name, async () => {
+    closeActs();
+    try { await api("/api/forward", { id: m.id, ws: c.ws }); toast("Forwarded to " + c.name); }
+    catch (err) { toast("Not sent: " + err.message); }
+  }]));
+}
+function remindAt(m, lead) {
+  const hour = 3600e3, at9 = days => { const d = new Date(); d.setDate(d.getDate() + days); d.setHours(9, 0, 0, 0); return d.getTime(); };
+  const toMon = (8 - new Date().getDay()) % 7 || 7;
+  const set = async (at, label) => {
+    closeActs();
+    try { await api("/api/remind", { id: m.id, at, lead, label }); toast("Reminder set"); }
+    catch (err) { toast(err.message); }
+  };
+  const pick = document.createElement("div");
+  pick.className = "when";
+  pick.innerHTML = '<input type="datetime-local" aria-label="Pick a time"><button class="set">Set</button>';
+  pick.querySelector("button").onclick = () => {
+    const t = new Date(pick.querySelector("input").value).getTime();
+    if (t > Date.now()) set(t, "on " + new Date(t).toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }));
+    else toast("Pick a time in the future");
+  };
+  openActs(lead ? "When should the lead pick this up?" : "Remind me", [
+    ["In 1 hour", () => set(Date.now() + hour, "in 1 hour")],
+    ["In 3 hours", () => set(Date.now() + 3 * hour, "in 3 hours")],
+    ["Tomorrow at 9 AM", () => set(at9(1), "tomorrow at 9 AM")],
+    ["Monday at 9 AM", () => set(at9(toMon), "Monday at 9 AM")],
+  ], pick);
+}
+// Swipe a circle right to mark it unread.
+{
+  let x0 = null, y0 = 0, row = null;
+  $("list").addEventListener("pointerdown", e => { row = e.target.closest(".row"); x0 = row ? e.clientX : null; y0 = e.clientY; });
+  $("list").addEventListener("pointerup", e => {
+    if (x0 === null || drag.el) return;
+    const dx = e.clientX - x0, ws = row?.dataset.ws;
+    x0 = null;
+    if (ws && dx > 90 && Math.abs(e.clientY - y0) < 40) { state.swiped = Date.now(); markUnread(ws); }
+  });
+}
+
+// ── search, from the circle list ──
+$("viewerPan").append(Object.assign(new Image(), { id: "viewerImg", alt: "Photo" }));
+function openViewer(src) {
+  $("viewerImg").src = $("viewerSave").href = src;
+  $("viewer").classList.remove("hidden", "zoomed");
+}
+$("viewerClose").onclick = () => $("viewer").classList.add("hidden");
+$("viewerImg").onclick = () => $("viewer").classList.toggle("zoomed");
+$("viewerPan").onclick = e => { if (e.target === $("viewerPan")) $("viewer").classList.add("hidden"); };
+
+function setSearching(on) {
+  state.searching = on;
+  $("searchBar").classList.toggle("hidden", !on);
+  if (!state.ws) $("list").classList.toggle("hidden", on);
+}
+$("findBtn").onclick = () => { setSearching(!state.searching); if (state.searching) $("q").focus(); };
+
+// Android's back closes search or an open sheet, not the app: each opens with a
+// history entry of its own, which back pops and closing by hand removes.
+const LAYERS = ["tasks", "peek", "acts", "viewer"];
+const layerUp = () => !!state.searching || LAYERS.some(id => !$(id).classList.contains("hidden"));
+let layerPushed = false;
+function syncLayer() {
+  const up = layerUp();
+  if (up && !layerPushed) { layerPushed = true; history.pushState({ layer: 1 }, ""); }
+  else if (!up && layerPushed) { layerPushed = false; if (history.state?.layer) history.back(); }
+}
+new MutationObserver(syncLayer).observe(document.body, { subtree: true, attributes: true, attributeFilter: ["class"] });
+window.addEventListener("popstate", () => {
+  if (!layerPushed || history.state?.layer) return;  // back onto the entry: a thread returning to its search
+  layerPushed = false;
+  for (const id of LAYERS) $(id).classList.add("hidden");
+  setSearching(false);
+});
+$("q").addEventListener("input", () => {
+  clearTimeout(state.qt);
+  state.qt = setTimeout(async () => {
+    const q = $("q").value, d = await api("/api/search?q=" + encodeURIComponent(q)).catch(() => ({ results: [] }));
+    if (q !== $("q").value) return;
+    $("results").replaceChildren(...d.results.map(r => {
+      const b = document.createElement("button");
+      b.className = "hit";
+      b.innerHTML = '<div class="top"><span></span><span></span></div><div class="tx"></div>';
+      const [a, t] = b.querySelectorAll(".top span");
+      a.textContent = r.circle + (r.from === "me" ? " · You" : ""); t.textContent = when(r.ts);
+      b.querySelector(".tx").textContent = r.text;
+      b.onclick = () => { location.hash = "#/c/" + encodeURIComponent(r.ws) + "?m=" + r.id; };
+      return b;
+    }));
+    if (q.trim().length > 1 && !d.results.length) $("results").innerHTML = '<div class="empty">Nothing found.</div>';
+  }, 250);
+});
+
+// ── live updates: long poll while open, push when closed ──
+function offline() { $("offline").classList.remove("hidden"); }
+async function poll() {
+  for (;;) {
+    if (document.visibilityState !== "visible") { await new Promise(r => setTimeout(r, 1000)); continue; }
+    try {
+      // A dead connection (Wi-Fi to mobile data) must not hang the loop.
+      const ac = new AbortController();
+      const t = setTimeout(() => ac.abort(), 35000);
+      const d = await api("/api/poll?v=" + state.v, undefined, ac.signal).finally(() => clearTimeout(t));
+      if (d.v !== state.v) {
+        state.v = d.v;
+        await (state.ws ? loadThread() : loadList());
+      }
+    } catch { offline(); await new Promise(r => setTimeout(r, 4000)); }
+  }
+}
+// An installed app keeps its old page when you switch back to it, so a change here
+// wouldn't show until the app was closed. Coming back after a minute, a new page reloads,
+// unless you are mid-message.
+const pageSig = text => { let h = 0; for (let i = 0; i < text.length; i++) h = (h * 31 + text.charCodeAt(i)) | 0; return h; };
+let pageSeen = null, pageChecked = Date.now();
+fetch("/", { cache: "no-store" }).then(r => r.text()).then(t => { pageSeen = pageSig(t); }).catch(() => {});
+document.addEventListener("visibilitychange", async () => {
+  if (document.hidden || pageSeen === null || Date.now() - pageChecked < 60000) return;
+  pageChecked = Date.now();
+  const text = await fetch("/", { cache: "no-store" }).then(r => r.ok ? r.text() : null).catch(() => null);
+  if (text && pageSig(text) !== pageSeen && !ta.value.trim() && !$("party")) location.reload();
+});
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible") return;
+  clearNotifications();
+  (state.ws ? loadThread() : loadList()).catch(offline);
+});
+
+// ── notifications ──
+function b64ToBytes(s) {
+  const pad = "=".repeat((4 - s.length % 4) % 4);
+  const raw = atob((s + pad).replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from(raw, c => c.charCodeAt(0));
+}
+function showNotifyButton() {
+  const ok = "Notification" in window && "serviceWorker" in navigator;
+  $("notify").classList.toggle("hidden", !ok || state.ws !== null || Notification.permission === "granted");
+}
+async function subscribe() {
+  const reg = await navigator.serviceWorker.ready;
+  const { key } = await api("/api/vapid");
+  let sub = await reg.pushManager.getSubscription();
+  // A subscription made with an older server key would fail forever.
+  const old = sub?.options.applicationServerKey;
+  if (sub && old && btoa(String.fromCharCode(...new Uint8Array(old))) !==
+      btoa(String.fromCharCode(...b64ToBytes(key)))) { await sub.unsubscribe(); sub = null; }
+  if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(key) });
+  await api("/api/subscribe", { subscription: sub.toJSON() });
+}
+$("notify").onclick = async () => {
+  const p = await Notification.requestPermission();
+  if (p === "granted") { await subscribe(); await api("/api/test-push", {}); }
+  else if (p === "denied") alert("Notifications are blocked. Turn them on in Android Settings > Apps > Invoke > Notifications.");
+  showNotifyButton();
+};
+
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/sw.js").then(() => {
+    // Refresh the subscription each launch, so a rotated one never goes stale.
+    if (Notification.permission === "granted") subscribe().catch(() => {});
+  });
+  navigator.serviceWorker.addEventListener("message", e => {
+    if (e.data?.type === "open" && e.data.ws) location.hash = "#/c/" + encodeURIComponent(e.data.ws);
+    if (e.data?.type === "showing")
+      e.ports[0]?.postMessage(document.visibilityState === "visible" ? state.ws : null);
+  });
+}
+
+route();
+poll();
+clearNotifications();
+</script>
+</body>
+</html>

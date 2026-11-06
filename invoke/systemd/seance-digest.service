@@ -1,0 +1,6 @@
+[Unit]
+Description=Invoke end-of-day summary in the Alerts thread
+
+[Service]
+Type=oneshot
+ExecStart=__KIT__/invoke/seance-chat digest

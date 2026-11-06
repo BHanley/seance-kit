@@ -1,0 +1,14 @@
+{
+  "name": "Seance Ectoplasm",
+  "base": "dark",
+  "overrides": {
+    "userMessageBackground": "rgb(94,83,112)",
+    "userMessageBackgroundHover": "rgb(111,98,132)",
+    "composerSidebarBackground": "rgb(94,83,112)",
+    "promptBorder": "rgb(214,184,255)",
+    "promptBorderShimmer": "rgb(230,212,255)",
+    "briefLabelYou": "rgb(214,184,255)",
+    "selectionBg": "rgb(111,98,132)",
+    "text": "rgb(184,242,198)"
+  }
+}

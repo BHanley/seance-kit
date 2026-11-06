@@ -1,0 +1,9 @@
+[Unit]
+Description=Claude Code colors follow the Seance theme (claude-theme)
+
+[Path]
+PathChanged=%h/.local/share/seance/theme.json
+TriggerLimitIntervalSec=0
+
+[Install]
+WantedBy=default.target

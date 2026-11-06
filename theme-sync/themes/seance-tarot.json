@@ -1,0 +1,14 @@
+{
+  "name": "Seance Tarot",
+  "base": "dark",
+  "overrides": {
+    "userMessageBackground": "rgb(112,39,74)",
+    "userMessageBackgroundHover": "rgb(131,44,82)",
+    "composerSidebarBackground": "rgb(112,39,74)",
+    "promptBorder": "rgb(224,69,123)",
+    "promptBorderShimmer": "rgb(236,143,176)",
+    "briefLabelYou": "rgb(224,69,123)",
+    "selectionBg": "rgb(131,44,82)",
+    "text": "rgb(227,218,242)"
+  }
+}

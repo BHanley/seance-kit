@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+*.log
+*.pem
+alert-token
+messages.jsonl
+config.env
+.venv/

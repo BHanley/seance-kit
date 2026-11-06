@@ -1,0 +1,2 @@
+cryptography>=42
+py-vapid>=1.9

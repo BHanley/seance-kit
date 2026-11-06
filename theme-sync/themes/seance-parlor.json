@@ -1,0 +1,14 @@
+{
+  "name": "Seance Parlor",
+  "base": "light",
+  "overrides": {
+    "userMessageBackground": "rgb(139,152,159)",
+    "userMessageBackgroundHover": "rgb(124,142,154)",
+    "composerSidebarBackground": "rgb(139,152,159)",
+    "promptBorder": "rgb(36,82,122)",
+    "promptBorderShimmer": "rgb(23,53,79)",
+    "briefLabelYou": "rgb(36,82,122)",
+    "selectionBg": "rgb(124,142,154)",
+    "text": "rgb(35,28,23)"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "Seance Synth",
+  "base": "dark",
+  "overrides": {
+    "userMessageBackground": "rgb(27,95,123)",
+    "userMessageBackgroundHover": "rgb(29,112,140)",
+    "composerSidebarBackground": "rgb(27,95,123)",
+    "promptBorder": "rgb(45,226,255)",
+    "promptBorderShimmer": "rgb(129,238,255)",
+    "briefLabelYou": "rgb(45,226,255)",
+    "selectionBg": "rgb(29,112,140)",
+    "text": "rgb(230,224,255)"
+  }
+}

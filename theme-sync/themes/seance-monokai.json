@@ -1,0 +1,14 @@
+{
+  "name": "Seance Monokai",
+  "base": "dark",
+  "overrides": {
+    "userMessageBackground": "rgb(90,83,117)",
+    "userMessageBackgroundHover": "rgb(99,92,131)",
+    "composerSidebarBackground": "rgb(90,83,117)",
+    "promptBorder": "rgb(171,157,242)",
+    "promptBorderShimmer": "rgb(205,196,247)",
+    "briefLabelYou": "rgb(171,157,242)",
+    "selectionBg": "rgb(99,92,131)",
+    "text": "rgb(252,252,250)"
+  }
+}

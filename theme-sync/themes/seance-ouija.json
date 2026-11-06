@@ -1,0 +1,14 @@
+{
+  "name": "Seance Ouija",
+  "base": "light",
+  "overrides": {
+    "userMessageBackground": "rgb(158,161,182)",
+    "userMessageBackgroundHover": "rgb(139,145,172)",
+    "composerSidebarBackground": "rgb(158,161,182)",
+    "promptBorder": "rgb(47,63,122)",
+    "promptBorderShimmer": "rgb(31,41,79)",
+    "briefLabelYou": "rgb(47,63,122)",
+    "selectionBg": "rgb(139,145,172)",
+    "text": "rgb(42,30,22)"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "Seance Abyssal",
+  "base": "dark",
+  "overrides": {
+    "userMessageBackground": "rgb(121,73,64)",
+    "userMessageBackgroundHover": "rgb(143,83,71)",
+    "composerSidebarBackground": "rgb(121,73,64)",
+    "promptBorder": "rgb(255,138,107)",
+    "promptBorderShimmer": "rgb(255,185,166)",
+    "briefLabelYou": "rgb(255,138,107)",
+    "selectionBg": "rgb(143,83,71)",
+    "text": "rgb(201,215,227)"
+  }
+}

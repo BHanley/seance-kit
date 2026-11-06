@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+# AFK mode: you step away from your Mac (lid closed, driving) and keep working from your phone.
+#
+#   afk [on]        keep the Mac awake with its lid closed, mark both machines AFK, text you in Invoke
+#   afk off [WHY]   let the Mac sleep again, clear the marks, text you
+#   afk status      print whether AFK is on here
+#   afk check       Mac only, run every 15 s by launchd (dev.seance-kit.afk-watch): ends AFK when
+#                   the Mac's keyboard or trackpad is used after a minute of no input (you left and
+#                   came back), or the battery runs low
+#
+# Two roles, which can be one machine:
+#   the Mac     is kept awake (pmset) and watched for your return;
+#   the server  runs Invoke (seance-chat), so it can text you.
+# Works from either machine and reaches the other over ssh. Config (~/.config/seance-kit/config.env):
+#   MAC_SSH        how to reach the Mac from here: user@host, an ssh alias, or "local" if you run
+#                  this on the Mac. Needed when this script runs on the server.
+#   SERVER_SSH     how to reach the server from here, or "local" if Invoke runs on this machine.
+#                  Needed when this script runs on the Mac.
+#   MAC_SSH_KEY    optional: ssh key file for MAC_SSH.
+#   INVOKE_BIN     path of seance-chat ON THE SERVER (default: ../invoke/seance-chat next to this file).
+# While the mark (<data dir>/afk/on) is there, afk-prompt-hook.py tells every Claude session to reach
+# you through Invoke. Sending `afk` or `afk off` as a message in any Invoke thread runs this.
+# --no-text skips the Invoke text (Invoke itself answers in the thread).
+# Keeping the Mac awake needs a one-time sudoers entry, see afk/README.md.
+set -u
+
+CONF="${SEANCE_KIT_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/seance-kit}"
+# shellcheck disable=SC1091
+[ -f "$CONF/config.env" ] && . "$CONF/config.env"
+DATA="${SEANCE_KIT_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/seance-kit}"
+MARK="$DATA/afk/on"
+# The same folder as a string a remote shell expands for itself (its home and data dir, not ours).
+AFK_DIR_EXPR='${SEANCE_KIT_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/seance-kit}/afk'
+AWAY=60       # seconds without Mac input that count as "you have left"; input after that means you're back
+LOW_BATT=15   # percent, while on battery
+ALIVE=(-o ConnectTimeout=5 -o ServerAliveInterval=5 -o ServerAliveCountMax=2)
+MAC_SSH="${SEANCE_KIT_MAC_SSH:-${MAC_SSH:-}}"
+SERVER_SSH="${SEANCE_KIT_SERVER_SSH:-${SERVER_SSH:-}}"
+MAC_SSH_KEY="${SEANCE_KIT_MAC_SSH_KEY:-${MAC_SSH_KEY:-}}"
+INVOKE_BIN="${SEANCE_KIT_INVOKE_BIN:-${INVOKE_BIN:-$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)/invoke/seance-chat}}"
+
+IS_MAC=0; [ "$(uname)" = Darwin ] && IS_MAC=1
+
+# on_mac CMD / on_server CMD: run CMD on that machine, here or over ssh.
+on_mac() {
+  if [ "$MAC_SSH" = local ] || { [ -z "$MAC_SSH" ] && [ "$IS_MAC" = 1 ]; }; then /bin/bash -c "$1"; return; fi
+  if [ -z "$MAC_SSH" ]; then
+    echo "afk: MAC_SSH is not set. Put MAC_SSH=you@your-mac in $CONF/config.env (see config/config.env.sample)." >&2
+    return 1
+  fi
+  local key=(); [ -n "$MAC_SSH_KEY" ] && key=(-i "$MAC_SSH_KEY" -o IdentitiesOnly=yes)
+  ssh "${key[@]+"${key[@]}"}" -o BatchMode=yes "${ALIVE[@]}" "$MAC_SSH" "$1"
+}
+on_server() {
+  if [ "$SERVER_SSH" = local ] || { [ -z "$SERVER_SSH" ] && [ "$IS_MAC" = 0 ]; }; then /bin/bash -c "$1"; return; fi
+  if [ -z "$SERVER_SSH" ]; then
+    echo "afk: SERVER_SSH is not set. Put SERVER_SSH=your-server (an ssh host) in $CONF/config.env, or SERVER_SSH=local if Invoke runs on this machine." >&2
+    return 1
+  fi
+  ssh -o BatchMode=yes "${ALIVE[@]}" "$SERVER_SSH" "$1"
+}
+
+text=1
+args=()
+for a in "$@"; do [ "$a" = --no-text ] && text=0 || args+=("$a"); done
+set -- "${args[@]+"${args[@]}"}"
+
+say() {
+  echo "$1"
+  if [ "$text" = 1 ]; then on_server "$(printf %q "$INVOKE_BIN") alert $(printf %q "$1")" >/dev/null 2>&1; fi
+  return 0
+}
+
+mark_cmd() { echo "D=\"$AFK_DIR_EXPR\"; mkdir -p \"\$D\" && rm -f \"\$D/away\" \"\$D/mac-awake\" && date +%s > \"\$D/on\""; }
+
+case "${1:-on}" in
+  on)
+    on_server "$(mark_cmd)" || echo "Couldn't mark the server AFK."
+    if on_mac "$(mark_cmd) && sudo -n /usr/bin/pmset -a disablesleep 1" >/dev/null 2>&1; then
+      on_server "D=\"$AFK_DIR_EXPR\"; touch \"\$D/mac-awake\"" 2>/dev/null  # Invoke's top bar shows it
+      say "AFK on. The Mac stays awake with its lid closed and leads text you here. Touch the Mac's keyboard or trackpad to end it, or send afk off in any circle's thread."
+    else
+      say "AFK on for the leads, but the Mac can't be kept awake: it's asleep, out of reach, or the one-time sudoers step isn't done yet. It will sleep when the lid closes."
+    fi
+    ;;
+  off)
+    shift
+    why="${*:-}"
+    on_server "D=\"$AFK_DIR_EXPR\"; rm -f \"\$D/on\" \"\$D/mac-awake\"" || echo "Couldn't clear the server mark (it expires after 12 hours)."
+    # The Mac mark goes only once sleep is back on, so the watcher tries again next time you leave and return.
+    if on_mac "D=\"$AFK_DIR_EXPR\"; rm -f \"\$D/away\"; { ! /usr/bin/pmset -g | grep -Eq 'SleepDisabled[[:space:]]+1' || sudo -n /usr/bin/pmset -a disablesleep 0; } && rm -f \"\$D/on\"" >/dev/null 2>&1; then
+      say "AFK off${why:+ ($why)}. The Mac sleeps with its lid closed again."
+    else
+      say "AFK off${why:+ ($why)}, but the Mac couldn't be set to sleep again (out of reach, or the sudoers step isn't done). Run afk off on the Mac when it's back."
+    fi
+    ;;
+  status)
+    if [ -f "$MARK" ]; then echo "AFK on since $(date -d "@$(cat "$MARK")" +%H:%M 2>/dev/null || date -r "$(cat "$MARK")" +%H:%M)"; else echo "AFK off"; fi
+    ;;
+  check)
+    [ "$IS_MAC" = 1 ] && [ -f "$MARK" ] || exit 0
+    batt=$(/usr/bin/pmset -g batt)
+    pct=$(echo "$batt" | grep -oE '[0-9]+%' | head -1 | tr -d %)
+    if echo "$batt" | grep -q "Battery Power" && [ -n "$pct" ] && [ "$pct" -lt "$LOW_BATT" ]; then
+      exec "$0" off "battery at $pct%"
+    fi
+    idle=$(/usr/sbin/ioreg -c IOHIDSystem | awk '/HIDIdleTime/ {print int($NF/1000000000); exit}')
+    case "$idle" in ''|*[!0-9]*) exit 0 ;; esac
+    # Typing `afk` at the Mac and finishing up there doesn't end it: only input after you have been away.
+    if [ "$idle" -ge "$AWAY" ]; then
+      touch "$DATA/afk/away"
+    elif [ "$idle" -lt 20 ] && [ -f "$DATA/afk/away" ]; then
+      exec "$0" off "you're back at the Mac"
+    fi
+    ;;
+  *)
+    sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'
+    exit 2
+    ;;
+esac

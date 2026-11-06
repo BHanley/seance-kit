@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Mac only: ends AFK when you touch the keyboard or trackpad, or the battery runs low (afk check). -->
+<!-- Install: ../install.sh afk fills in the two __PLACEHOLDERS__ and copies this to ~/Library/LaunchAgents/. -->
+<!-- By hand: replace __AFK__ with the full path of afk/afk and __LOG__ with a log file, copy it to -->
+<!-- ~/Library/LaunchAgents/, then launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.seance-kit.afk-watch.plist -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>dev.seance-kit.afk-watch</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>__AFK__</string>
+    <string>check</string>
+  </array>
+  <key>StartInterval</key>
+  <integer>15</integer>
+  <key>StandardErrorPath</key>
+  <string>__LOG__</string>
+  <key>StandardOutPath</key>
+  <string>__LOG__</string>
+</dict>
+</plist>
